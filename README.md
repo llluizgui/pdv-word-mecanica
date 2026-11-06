@@ -1,30 +1,27 @@
 # PDV Word Mecânica — Siliro Tech
 
-**Aplicativo independente para oficinas de carros e motos.** Este repositório não utiliza nem modifica o código do PDV Word Mercado.
+Aplicativo Windows exclusivo para oficinas mecânicas de carros e motos. Projeto **separado** do PDV Word de mercado.
 
-## Versão 1.1.0 — avaliação operacional
+## Versão 1.2.0 — testes de avaliação
 
-Interface desktop em Python/Tkinter, armazenamento local SQLite, sem servidor. Código da versão anterior incluído no pacote fonte. Módulos para cadastros de clientes e veículos, orçamentos com itens, ordens de serviço, estoque de peças, mecânicos, agenda, checklist, caixa e relatórios. Abre uma mensagem para revisão e envio manual via WhatsApp.
+### Melhorias
+- Navegação compacta por módulos e rolagem vertical nas telas para uso em notebooks e monitores menores
+- Cadastro rápido de cliente e veículo diretamente no orçamento
+- Emissão de ficha técnica/orçamento em PDF e opção de imprimir no Windows
+- Cadastro de peças, capacetes, GPS e acessórios no estoque
+- Venda rápida de produtos com baixa automática no estoque, descontos e formas de pagamento
+- Relatório de vendas por data, com itens e forma de pagamento; acesso com senha definida no primeiro uso
+- Recebimentos de serviços e caixa separados das vendas de balcão no relatório
 
-**Atenção:** não é uma versão comercial homologada. Não realiza NF-e/NFC-e/NFS-e, TEF, aprovação eletrônica verificável, controle de acesso ou auditoria robusta. Precisa de testes de aceitação, segurança, migração e recuperação antes de produção.
+### Banco local e atualização
+Os dados permanecem no PC em `%LOCALAPPDATA%\\PDVWordMecanica\\mecanica.db`, com fotos na pasta `fotos`. Faça backup do banco e da pasta de imagens antes de atualizar. As versões 1.1 e 1.2 utilizam o mesmo esquema, com migrações aditivas para os novos recursos.
 
-## Como obter o instalador Windows
+### Instalador Windows
+Acesse [Releases](https://github.com/llluizgui/pdv-word-mecanica/releases) e baixe `PDVWord_Mecanica_Setup_1.2.0.exe` da release 1.2.0 de avaliação quando a compilação terminar.
 
-1. Vá em **Actions** → **Gerar instalador Windows**.
-2. Abra a execução mais recente após a publicação ou use **Run workflow**.
-3. Se a execução finalizar com sucesso, baixe o artefato `PDVWord-Mecanica-Setup-1.1.0` e extraia `PDVWord_Mecanica_Setup_1.1.0.exe`.
-4. O Setup é instalado por dois cliques e o computador de destino não exige Python.
+O computador que instala o aplicativo não precisa de Python.
 
-A automação compila o programa no GitHub Windows runner com Python 3.12, PyInstaller e Inno Setup 6.
+### Aviso importante
+**Não homologado para operação comercial definitiva.** Ainda não realiza NF-e/NFC-e/NFS-e, integração de TEF/maquininhas nem assinatura eletrônica verificável. A senha é específica para o acesso ao relatório; não é um sistema completo de permissões de usuários. Requer testes em computadores reais, validação de backups, de segurança e das integrações fiscais antes do uso em produção.
 
-## Dados no Windows
-
-`%LOCALAPPDATA%\PDVWordMecanica\mecanica.db`
-
-As fotos de checklists ficam em `%LOCALAPPDATA%\PDVWordMecanica\fotos`. Faça backup dos **dois**.
-
-## Desenvolvedor
-
-Siliro Tech — projeto separado do PDV Word de mercado.
-
-Código em avaliação: não utilizar com informações reais de clientes sem validação adequada.
+O compartilhamento pelo WhatsApp abre uma mensagem para revisão; a ficha PDF deve ser anexada manualmente.
