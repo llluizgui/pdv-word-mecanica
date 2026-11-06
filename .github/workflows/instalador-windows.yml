@@ -51,24 +51,34 @@ jobs:
           from pathlib import Path
           app = Path("app.py")
           s = app.read_text(encoding="utf-8")
-          old = "from ui_v14 import UnifiedExperience\\nclass AppV14(UnifiedExperience, App):\\n    pass\\nApp = AppV14"
-          new = "from ui_v14 import UnifiedExperience\\nfrom ui_v15 import ModernExperience\\nclass AppV14(UnifiedExperience, App):\\n    pass\\nclass AppV15(ModernExperience, AppV14):\\n    pass\\nApp = AppV15"
-          old = old.replace("\\\\n", "\\n")
-          new = new.replace("\\\\n", "\\n")
-          if old not in s: raise SystemExit("Nao foi possivel localizar ponto de integracao da v1.4.")
+          old = """from ui_v14 import UnifiedExperience
+          class AppV14(UnifiedExperience, App):
+              pass
+          App = AppV14"""
+          new = """from ui_v14 import UnifiedExperience
+          from ui_v15 import ModernExperience
+          class AppV14(UnifiedExperience, App):
+              pass
+          class AppV15(ModernExperience, AppV14):
+              pass
+          App = AppV15"""
+          if old not in s: raise SystemExit("Ponto de integracao da v1.4 nao encontrado.")
           app.write_text(s.replace(old, new), encoding="utf-8")
           setup = Path("PDVWordMecanica.iss")
           raw = setup.read_text(encoding="utf-8")
-          if "1.5.0" not in raw: raise SystemExit("Versao Inno Setup inesperada")
-          setup.write_text(raw.replace("1.5.0", "1.5.0"), encoding="utf-8")
+          if "1.4.0" not in raw: raise SystemExit("Versao Inno Setup inesperada")
+          setup.write_text(raw.replace("1.4.0", "1.5.0"), encoding="utf-8")
           bat = Path("GERAR_INSTALADOR_WINDOWS.bat")
-          bat.write_text(bat.read_text(encoding="utf-8").replace("1.5.0","1.5.0"),encoding="utf-8")
+          bat.write_text(bat.read_text(encoding="utf-8").replace("1.4.0","1.5.0"), encoding="utf-8")
           readme = Path("README.md")
-          doc = readme.read_text(encoding="utf-8")
-          doc = doc.replace("1.5.0","1.5.0")
-          doc += "\\n\\n## Interface 1.5\\nAtendimento unico em cinco etapas (cliente, veiculo, orcamento, itens e revisao). Menu lateral moderno, resumo e total dinamicos, buscas por nome e rolagem em telas menores. Dados locais e demais rotinas preservados.\\n"
-          readme.write_text(doc,encoding="utf-8")
-          print("Integração UI 1.5 e versão do instalador OK")
+          doc = readme.read_text(encoding="utf-8").replace("1.4.0","1.5.0")
+          doc += """
+          ## Interface moderna 1.5
+          Atendimento unico em cinco etapas: cliente, veiculo, orcamento, itens e revisao.
+          Menu lateral, resumo dinamico, rolagem em monitores menores e dados locais preservados.
+          """
+          readme.write_text(doc, encoding="utf-8")
+          print("Integracao UI 1.5 e versao do instalador OK")
           '@ | python -
       - name: Validar codigo e ambiente
         shell: pwsh
