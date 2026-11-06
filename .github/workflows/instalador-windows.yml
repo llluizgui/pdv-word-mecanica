@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.12'
           architecture: x64
-      - name: Extrair arquivos originais da versão 1.1
+      - name: Extrair arquivos originais da versão 1.2
         shell: pwsh
         run: |
           @'
@@ -47,7 +47,7 @@ jobs:
         run: |
           python -m py_compile app.py base_app.py
           python -m pip install --upgrade pip
-          python -m pip install pyinstaller==6.16.0
+          python -m pip install pyinstaller==6.16.0 reportlab==4.4.4
       - name: Criar executavel do aplicativo
         shell: pwsh
         run: |
@@ -75,7 +75,7 @@ jobs:
           if (-not $iscc) { throw 'ISCC.exe nao encontrado.' }
           & $iscc PDVWordMecanica.iss
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar instalador.' }
-          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.1.0.exe')) { throw 'Setup.exe nao foi gerado.' }
+          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.2.0.exe')) { throw 'Setup.exe nao foi gerado.' }
       - name: Publicar fonte legivel no repositorio
         shell: pwsh
         run: |
@@ -91,8 +91,8 @@ jobs:
       - name: Anexar instalador ao Actions
         uses: actions/upload-artifact@v4
         with:
-          name: PDVWord-Mecanica-Setup-1.1.0
-          path: instalador/PDVWord_Mecanica_Setup_1.1.0.exe
+          name: PDVWord-Mecanica-Setup-1.2.0
+          path: instalador/PDVWord_Mecanica_Setup_1.2.0.exe
           retention-days: 30
           if-no-files-found: error
       - name: Publicar release de avaliacao
@@ -100,12 +100,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $asset = 'instalador/PDVWord_Mecanica_Setup_1.1.0.exe'
-          $tag = 'v1.1.0-avaliacao'
+          $asset = 'instalador/PDVWord_Mecanica_Setup_1.2.0.exe'
+          $tag = 'v1.2.0-avaliacao'
           gh release view $tag 2>$null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $asset --clobber
           } else {
-            gh release create $tag $asset --title 'PDV Word Mecanica 1.1.0 - avaliacao' --notes 'Instalador Windows de avaliacao. NAO HOMOLOGADO PARA USO COMERCIAL: sem emissao fiscal, TEF, permissoes ou auditoria. Testar antes de usar com clientes.' --prerelease
+            gh release create $tag $asset --title 'PDV Word Mecanica 1.2.0 - avaliacao' --notes 'Instalador Windows de avaliacao. NAO HOMOLOGADO PARA USO COMERCIAL: sem emissao fiscal ou TEF. Senha apenas para relatorios; conferir dados e realizar testes de recuperacao. Testar antes de usar com clientes.' --prerelease
           }
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar release.' }
