@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - source.tar.xz.b64
+      - ui_v15.py
+      - test_ui_v15.py
       - .github/workflows/instalador-windows.yml
   workflow_dispatch:
 
@@ -42,10 +44,36 @@ jobs:
               if not Path(file).is_file(): raise SystemExit(f"Falta arquivo: {file}")
           print("Fonte extraida corretamente.")
           '@ | python -
+      - name: Integrar interface moderna 1.5 ao aplicativo
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          app = Path("app.py")
+          s = app.read_text(encoding="utf-8")
+          old = "from ui_v14 import UnifiedExperience\\nclass AppV14(UnifiedExperience, App):\\n    pass\\nApp = AppV14"
+          new = "from ui_v14 import UnifiedExperience\\nfrom ui_v15 import ModernExperience\\nclass AppV14(UnifiedExperience, App):\\n    pass\\nclass AppV15(ModernExperience, AppV14):\\n    pass\\nApp = AppV15"
+          old = old.replace("\\\\n", "\\n")
+          new = new.replace("\\\\n", "\\n")
+          if old not in s: raise SystemExit("Nao foi possivel localizar ponto de integracao da v1.4.")
+          app.write_text(s.replace(old, new), encoding="utf-8")
+          setup = Path("PDVWordMecanica.iss")
+          raw = setup.read_text(encoding="utf-8")
+          if "1.5.0" not in raw: raise SystemExit("Versao Inno Setup inesperada")
+          setup.write_text(raw.replace("1.5.0", "1.5.0"), encoding="utf-8")
+          bat = Path("GERAR_INSTALADOR_WINDOWS.bat")
+          bat.write_text(bat.read_text(encoding="utf-8").replace("1.5.0","1.5.0"),encoding="utf-8")
+          readme = Path("README.md")
+          doc = readme.read_text(encoding="utf-8")
+          doc = doc.replace("1.5.0","1.5.0")
+          doc += "\\n\\n## Interface 1.5\\nAtendimento unico em cinco etapas (cliente, veiculo, orcamento, itens e revisao). Menu lateral moderno, resumo e total dinamicos, buscas por nome e rolagem em telas menores. Dados locais e demais rotinas preservados.\\n"
+          readme.write_text(doc,encoding="utf-8")
+          print("Integração UI 1.5 e versão do instalador OK")
+          '@ | python -
       - name: Validar codigo e ambiente
         shell: pwsh
         run: |
-          python -m py_compile app.py base_app.py office_flow.py ui_v14.py test_flow.py test_integrated.py
+          python -m py_compile app.py base_app.py office_flow.py ui_v14.py ui_v15.py test_flow.py test_integrated.py test_ui_v15.py
           python -m pip install --upgrade pip
           python -m pip install pyinstaller==6.16.0 reportlab==4.4.9
       - name: Testar fluxo de orcamentos e recebimentos
@@ -53,6 +81,10 @@ jobs:
         run: |
           python test_flow.py
           if ($LASTEXITCODE -ne 0) { throw 'Testes do fluxo de oficina falharam.' }
+          python test_integrated.py
+          if ($LASTEXITCODE -ne 0) { throw 'Testes integrados falharam.' }
+          python test_ui_v15.py
+          if ($LASTEXITCODE -ne 0) { throw 'Testes da interface moderna falharam.' }
       - name: Criar executavel do aplicativo
         shell: pwsh
         run: |
@@ -80,24 +112,24 @@ jobs:
           if (-not $iscc) { throw 'ISCC.exe nao encontrado.' }
           & $iscc PDVWordMecanica.iss
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar instalador.' }
-          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.4.0.exe')) { throw 'Setup.exe nao foi gerado.' }
+          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.5.0.exe')) { throw 'Setup.exe nao foi gerado.' }
       - name: Publicar fonte legivel no repositorio
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- app.py base_app.py office_flow.py ui_v14.py test_flow.py test_integrated.py README.md PDVWordMecanica.iss INICIAR_WINDOWS.bat GERAR_INSTALADOR_WINDOWS.bat
+          git add -- app.py base_app.py office_flow.py ui_v14.py ui_v15.py test_flow.py test_integrated.py test_ui_v15.py README.md PDVWordMecanica.iss INICIAR_WINDOWS.bat GERAR_INSTALADOR_WINDOWS.bat
           $status = git status --porcelain
           if ($status) {
-            git commit -m "Publica codigo-fonte da versao de avaliacao 1.4"
+            git commit -m "Publica codigo-fonte da versao de avaliacao 1.5"
             git push origin HEAD:main
             if ($LASTEXITCODE -ne 0) { Write-Warning 'Nao foi possivel publicar os arquivos de fonte legiveis.' }
           }
       - name: Anexar instalador ao Actions
         uses: actions/upload-artifact@v4
         with:
-          name: PDVWord-Mecanica-Setup-1.4.0
-          path: instalador/PDVWord_Mecanica_Setup_1.4.0.exe
+          name: PDVWord-Mecanica-Setup-1.5.0
+          path: instalador/PDVWord_Mecanica_Setup_1.5.0.exe
           retention-days: 30
           if-no-files-found: error
       - name: Publicar release de avaliacao
@@ -105,12 +137,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $asset = 'instalador/PDVWord_Mecanica_Setup_1.4.0.exe'
-          $tag = 'v1.4.0-avaliacao'
+          $asset = 'instalador/PDVWord_Mecanica_Setup_1.5.0.exe'
+          $tag = 'v1.5.0-avaliacao'
           gh release view $tag 2>$null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $asset --clobber
           } else {
-            gh release create $tag $asset --title 'PDV Word Mecanica 1.4.0 - avaliacao' --notes 'Instalador Windows de avaliacao. NAO HOMOLOGADO PARA USO COMERCIAL: sem emissao fiscal ou TEF. Ctrl+A abre relatorios protegidos; PDF de pagamento NAO fiscal; fazer backup e testar instalacao. Testar antes de usar com clientes.' --prerelease
+            gh release create $tag $asset --title 'PDV Word Mecanica 1.5.0 - avaliacao' --notes 'Instalador Windows de avaliacao. NAO HOMOLOGADO PARA USO COMERCIAL: sem emissao fiscal ou TEF. Ctrl+A abre relatorios protegidos; PDF de pagamento NAO fiscal; fazer backup e testar instalacao. Testar antes de usar com clientes.' --prerelease
           }
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar release.' }
