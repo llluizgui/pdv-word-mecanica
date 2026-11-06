@@ -70,11 +70,36 @@ class App(tk.Tk):
         self.customers = {}
         self.vehicles = {}
         self.nb = ttk.Notebook(self)
-        self.nb.pack(fill='both', expand=True, padx=14, pady=12)
+        self.nb.pack(fill='both', expand=True, padx=8, pady=4)
         self.make_customers()
         self.make_vehicles()
         self.make_quotes()
         self.refresh_all()
+
+    def scroll_tab(self, title):
+        """Vertical scrollbar for all modules, including low-resolution notebooks."""
+        host = ttk.Frame(self.nb)
+        self.nb.add(host, text=title)
+        canvas = tk.Canvas(host, highlightthickness=0, borderwidth=0)
+        scroll = ttk.Scrollbar(host, orient='vertical', command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        scroll.pack(side='right', fill='y')
+        canvas.pack(side='left', fill='both', expand=True)
+        inside = ttk.Frame(canvas, padding=10)
+        window = canvas.create_window((0, 0), window=inside, anchor='nw')
+        def resized(event):
+            canvas.configure(scrollregion=canvas.bbox('all'))
+        def viewport(event):
+            canvas.itemconfigure(window, width=event.width)
+            canvas.configure(scrollregion=canvas.bbox('all'))
+        inside.bind('<Configure>', resized)
+        canvas.bind('<Configure>', viewport)
+        def wheel(event):
+            if self.nb.select() == str(host):
+                canvas.yview_scroll(-1 if event.delta > 0 else 1, 'units')
+        host.bind('<Enter>', lambda event: canvas.bind_all('<MouseWheel>', wheel))
+        host.bind('<Leave>', lambda event: canvas.unbind_all('<MouseWheel>'))
+        return inside
 
     def form(self, parent, fields):
         entries = {}
@@ -88,8 +113,7 @@ class App(tk.Tk):
         return entries
 
     def make_customers(self):
-        tab = ttk.Frame(self.nb, padding=12)
-        self.nb.add(tab, text='Clientes')
+        tab = self.scroll_tab('Clientes')
         ttk.Label(tab, text='Cadastro de clientes', font=('Segoe UI', 16, 'bold')).pack(anchor='w')
         frame = ttk.LabelFrame(tab, text='Dados do cliente', padding=8)
         frame.pack(fill='x', pady=10)
@@ -102,8 +126,7 @@ class App(tk.Tk):
         self.customer_tree.pack(fill='both', expand=True, pady=10)
 
     def make_vehicles(self):
-        tab = ttk.Frame(self.nb, padding=12)
-        self.nb.add(tab, text='Veículos')
+        tab = self.scroll_tab('Veículos')
         ttk.Label(tab, text='Veículos vinculados aos clientes', font=('Segoe UI',16,'bold')).pack(anchor='w')
         top = ttk.Frame(tab)
         top.pack(fill='x', pady=12)
@@ -121,8 +144,7 @@ class App(tk.Tk):
         self.vehicle_tree.pack(fill='both',expand=True)
 
     def make_quotes(self):
-        tab = ttk.Frame(self.nb,padding=12)
-        self.nb.add(tab,text='Orçamentos')
+        tab = self.scroll_tab('Orçamentos')
         ttk.Label(tab,text='Orçamentos salvos no banco local',font=('Segoe UI',16,'bold')).pack(anchor='w')
         top=ttk.Frame(tab)
         top.pack(fill='x',pady=10)

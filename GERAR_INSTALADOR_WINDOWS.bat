@@ -7,7 +7,7 @@ if errorlevel 1 (echo ERRO: Python nao encontrado no computador de compilacao. &
 py -m venv .buildvenv
 if errorlevel 1 (echo Falha ao criar ambiente. & pause & exit /b 1)
 call .buildvenv\Scripts\activate.bat
-python -m pip install --upgrade pip pyinstaller
+python -m pip install --upgrade pip pyinstaller reportlab
 if errorlevel 1 (echo Falha ao instalar PyInstaller. & pause & exit /b 1)
 pyinstaller --noconfirm --clean --windowed --name PDVWordMecanica app.py
 if errorlevel 1 (echo Falha ao gerar executavel. & pause & exit /b 1)
