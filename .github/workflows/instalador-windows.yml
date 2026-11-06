@@ -26,14 +26,22 @@ jobs:
       - name: Extrair arquivos originais da versão 1.1
         shell: pwsh
         run: |
-          if (-not (Test-Path 'source.tar.xz.b64')) { throw 'Pacote fonte nao encontrado.' }
-          $encoded = (Get-Content 'source.tar.xz.b64' -Raw).Trim()
-          [System.IO.File]::WriteAllBytes((Join-Path $pwd 'source.tar.xz'), [System.Convert]::FromBase64String($encoded))
-          tar -xf source.tar.xz
-          if ($LASTEXITCODE -ne 0) { throw 'Falha ao extrair pacote fonte.' }
-          foreach ($file in @('app.py','base_app.py','PDVWordMecanica.iss')) {
-            if (-not (Test-Path $file)) { throw "Arquivo obrigatorio nao encontrado: $file" }
-          }
+          @'
+          from pathlib import Path
+          import base64, tarfile
+          source = Path("source.tar.xz.b64")
+          if not source.is_file(): raise SystemExit("Pacote fonte nao encontrado")
+          raw = base64.b64decode(source.read_text(encoding="utf-8").strip(), validate=True)
+          Path("source.tar.xz").write_bytes(raw)
+          with tarfile.open("source.tar.xz", "r:xz") as ar:
+              names = ar.getnames()
+              allowed = {"app.py", "base_app.py", "README.md", "PDVWordMecanica.iss", "GERAR_INSTALADOR_WINDOWS.bat", "INICIAR_WINDOWS.bat"}
+              if not set(names).issubset(allowed): raise SystemExit("Arquivos inesperados no pacote")
+              ar.extractall(".", filter="data")
+          for file in ("app.py", "base_app.py", "PDVWordMecanica.iss"):
+              if not Path(file).is_file(): raise SystemExit(f"Falta arquivo: {file}")
+          print("Fonte extraida corretamente.")
+          '@ | python -
       - name: Validar codigo e ambiente
         shell: pwsh
         run: |
