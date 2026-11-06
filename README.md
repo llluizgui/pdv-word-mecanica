@@ -1,4 +1,4 @@
-# PDV Word Mecânica 1.4.0 — Atendimento integrado (versão de avaliação)
+# PDV Word Mecânica 1.5.0 — Atendimento integrado (versão de avaliação)
 
 Sistema desktop Windows 10/11 para oficinas de automóveis e motos, separado do PDV Word de mercados. Banco SQLite local em `%LOCALAPPDATA%\PDVWordMecanica\mecanica.db` (não é apagado na atualização).
 
@@ -14,7 +14,7 @@ Sistema desktop Windows 10/11 para oficinas de automóveis e motos, separado do 
 
 ## Instalador Windows
 
-O GitHub Actions compila a versão para Windows e publica em Releases como `PDVWord_Mecanica_Setup_1.4.0.exe`. O cliente não precisa de Python. A instalação usa a mesma identidade de aplicativo das versões anteriores e mantém os dados em `%LOCALAPPDATA%` fora da pasta de instalação.
+O GitHub Actions compila a versão para Windows e publica em Releases como `PDVWord_Mecanica_Setup_1.5.0.exe`. O cliente não precisa de Python. A instalação usa a mesma identidade de aplicativo das versões anteriores e mantém os dados em `%LOCALAPPDATA%` fora da pasta de instalação.
 
 Se gerar no próprio PC, use `GERAR_INSTALADOR_WINDOWS.bat` com Python 3.12, PyInstaller e Inno Setup 6.
 
@@ -28,3 +28,7 @@ Se gerar no próprio PC, use `GERAR_INSTALADOR_WINDOWS.bat` com Python 3.12, PyI
 ## Dependências de desenvolvimento
 
 Python 3.12 (stdlib `tkinter`, `sqlite3`) e ReportLab 4.4.9 para PDFs. PyInstaller 6.16 + Inno Setup 6 para gerar instalador.
+
+## Interface moderna 1.5
+Atendimento unico em cinco etapas: cliente, veiculo, orcamento, itens e revisao.
+Menu lateral, resumo dinamico, rolagem em monitores menores e dados locais preservados.

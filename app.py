@@ -1025,9 +1025,12 @@ class App(BaseApp):
         if getattr(self, 'report_granted', False): self.query_report()
 
 from ui_v14 import UnifiedExperience
+from ui_v15 import ModernExperience
 class AppV14(UnifiedExperience, App):
     pass
-App = AppV14
+class AppV15(ModernExperience, AppV14):
+    pass
+App = AppV15
 
 if __name__=='__main__':
     init_db();extra_db();App().mainloop()
