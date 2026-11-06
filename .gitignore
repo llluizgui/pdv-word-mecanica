@@ -1,0 +1,23 @@
+# Dados pessoais, bancos locais e fotos NÃO entram no Git
+*.db
+*.sqlite
+*.sqlite3
+fotos/
+backups/
+*.zip
+*.log
+.env
+.env.*
+*.pem
+*.key
+# Ambiente de compilação
+__pycache__/
+*.py[cod]
+.venv/
+.buildvenv/
+build/
+dist/
+instalador/
+*.spec
+.vscode/
+.idea/
