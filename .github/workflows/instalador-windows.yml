@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.12'
           architecture: x64
-      - name: Extrair arquivos originais da versão 1.2
+      - name: Extrair arquivos originais da versão 1.3
         shell: pwsh
         run: |
           @'
@@ -35,19 +35,24 @@ jobs:
           Path("source.tar.xz").write_bytes(raw)
           with tarfile.open("source.tar.xz", "r:xz") as ar:
               names = ar.getnames()
-              allowed = {"app.py", "base_app.py", "README.md", "PDVWordMecanica.iss", "GERAR_INSTALADOR_WINDOWS.bat", "INICIAR_WINDOWS.bat"}
+              allowed = {"app.py", "base_app.py", "office_flow.py", "test_flow.py", "README.md", "PDVWordMecanica.iss", "GERAR_INSTALADOR_WINDOWS.bat", "INICIAR_WINDOWS.bat"}
               if not set(names).issubset(allowed): raise SystemExit("Arquivos inesperados no pacote")
               ar.extractall(".", filter="data")
-          for file in ("app.py", "base_app.py", "PDVWordMecanica.iss"):
+          for file in ("app.py", "base_app.py", "office_flow.py", "test_flow.py", "PDVWordMecanica.iss"):
               if not Path(file).is_file(): raise SystemExit(f"Falta arquivo: {file}")
           print("Fonte extraida corretamente.")
           '@ | python -
       - name: Validar codigo e ambiente
         shell: pwsh
         run: |
-          python -m py_compile app.py base_app.py
+          python -m py_compile app.py base_app.py office_flow.py test_flow.py
           python -m pip install --upgrade pip
-          python -m pip install pyinstaller==6.16.0 reportlab==4.4.4
+          python -m pip install pyinstaller==6.16.0 reportlab==4.4.9
+      - name: Testar fluxo de orcamentos e recebimentos
+        shell: pwsh
+        run: |
+          python test_flow.py
+          if ($LASTEXITCODE -ne 0) { throw 'Testes do fluxo de oficina falharam.' }
       - name: Criar executavel do aplicativo
         shell: pwsh
         run: |
@@ -75,24 +80,24 @@ jobs:
           if (-not $iscc) { throw 'ISCC.exe nao encontrado.' }
           & $iscc PDVWordMecanica.iss
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar instalador.' }
-          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.2.0.exe')) { throw 'Setup.exe nao foi gerado.' }
+          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.3.0.exe')) { throw 'Setup.exe nao foi gerado.' }
       - name: Publicar fonte legivel no repositorio
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- app.py base_app.py PDVWordMecanica.iss INICIAR_WINDOWS.bat GERAR_INSTALADOR_WINDOWS.bat
+          git add -- app.py base_app.py office_flow.py test_flow.py README.md PDVWordMecanica.iss INICIAR_WINDOWS.bat GERAR_INSTALADOR_WINDOWS.bat
           $status = git status --porcelain
           if ($status) {
-            git commit -m "Publica codigo-fonte da versao de avaliacao 1.1"
+            git commit -m "Publica codigo-fonte da versao de avaliacao 1.3"
             git push origin HEAD:main
             if ($LASTEXITCODE -ne 0) { Write-Warning 'Nao foi possivel publicar os arquivos de fonte legiveis.' }
           }
       - name: Anexar instalador ao Actions
         uses: actions/upload-artifact@v4
         with:
-          name: PDVWord-Mecanica-Setup-1.2.0
-          path: instalador/PDVWord_Mecanica_Setup_1.2.0.exe
+          name: PDVWord-Mecanica-Setup-1.3.0
+          path: instalador/PDVWord_Mecanica_Setup_1.3.0.exe
           retention-days: 30
           if-no-files-found: error
       - name: Publicar release de avaliacao
@@ -100,12 +105,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $asset = 'instalador/PDVWord_Mecanica_Setup_1.2.0.exe'
-          $tag = 'v1.2.0-avaliacao'
+          $asset = 'instalador/PDVWord_Mecanica_Setup_1.3.0.exe'
+          $tag = 'v1.3.0-avaliacao'
           gh release view $tag 2>$null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $asset --clobber
           } else {
-            gh release create $tag $asset --title 'PDV Word Mecanica 1.2.0 - avaliacao' --notes 'Instalador Windows de avaliacao. NAO HOMOLOGADO PARA USO COMERCIAL: sem emissao fiscal ou TEF. Senha apenas para relatorios; conferir dados e realizar testes de recuperacao. Testar antes de usar com clientes.' --prerelease
+            gh release create $tag $asset --title 'PDV Word Mecanica 1.3.0 - avaliacao' --notes 'Instalador Windows de avaliacao. NAO HOMOLOGADO PARA USO COMERCIAL: sem emissao fiscal ou TEF. Ctrl+A abre relatorios protegidos; PDF de pagamento NAO fiscal; fazer backup e testar instalacao. Testar antes de usar com clientes.' --prerelease
           }
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar release.' }
