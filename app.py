@@ -14,8 +14,9 @@ from pathlib import Path
 import webbrowser
 import urllib.parse
 from base_app import App as BaseApp, connect, init_db, DB, brl, money_to_cents
+from office_flow import migrate, decide_quote, order_balance, report_data, search_cash, payment, APPROVED, REJECTED, PENDING
 
-APP_VERSION='1.2.0 - Avaliação operacional'
+APP_VERSION='1.3.0 - Avaliação operacional'
 
 def extra_db():
     with connect() as con:
@@ -64,7 +65,10 @@ class App(BaseApp):
         self.make_inventory();self.make_staff();self.make_items();self.make_orders();self.make_schedule();self.make_finance();self.make_checklists();self.make_admin()
         self.make_retail()
         self.init_security_and_sales()
+        with connect() as con:migrate(con)
         self.add_module_navigation()
+        self.bind_all('<Control-a>', self.open_reports_shortcut)
+        self.bind_all('<Control-A>', self.open_reports_shortcut)
         self.refresh_extended()
         self.refresh_retail()
 
@@ -80,6 +84,24 @@ class App(BaseApp):
     def save_quote(self):
         super().save_quote()
         self.refresh_extended()
+
+    def refresh_all(self):
+        # Atualiza os totais da lista com os itens detalhados, e não só os valores iniciais.
+        selected=None
+        if hasattr(self,'quote_tree'):
+            picked=self.quote_tree.selection()
+            if picked:selected=int(self.quote_tree.item(picked[0],'values')[0])
+        super().refresh_all()
+        if not hasattr(self,'quote_tree'):return
+        with connect() as con:
+            records=con.execute('SELECT id,status FROM orcamentos').fetchall()
+            computed={qid:(self.quote_total(con,qid),status) for qid,status in records}
+        for widget in self.quote_tree.get_children():
+            row=list(self.quote_tree.item(widget,'values'))
+            qid=int(row[0]); value,status=computed[qid]
+            row[4]=brl(value);row[5]=status
+            self.quote_tree.item(widget,values=row)
+            if qid==selected:self.quote_tree.selection_set(widget)
 
     def whatsapp(self):
         qid=self.picked(self.quote_tree)
@@ -208,23 +230,58 @@ class App(BaseApp):
         f=ttk.LabelFrame(tab,text='Dados da ordem',padding=8);f.pack(fill='x',pady=5)
         self.osform=self.line(f,[('previsao','Previsão (AAAA-MM-DD)'),('problema','Problema relatado'),('diagnostico','Diagnóstico'),('garantia','Garantia até (AAAA-MM-DD)'),('km','KM de entrada'),('observacoes','Observações')])
         bar=ttk.Frame(tab);bar.pack(fill='x',pady=6)
-        ttk.Button(bar,text='Aprovar orçamento selecionado',command=lambda:self.alert(self.approve_quote)).pack(side='left',padx=3)
-        ttk.Button(bar,text='Converter em OS',command=lambda:self.alert(self.create_os)).pack(side='left',padx=3)
+        ttk.Button(bar,text='Aprovar e abrir OS',command=lambda:self.alert(self.approve_quote)).pack(side='left',padx=3)
+        ttk.Button(bar,text='Vincular OS antiga',command=lambda:self.alert(self.create_os)).pack(side='left',padx=3)
         ttk.Button(bar,text='Iniciar serviço',command=lambda:self.alert(lambda:self.update_os('Em andamento'))).pack(side='left',padx=3)
         ttk.Button(bar,text='Concluir serviço',command=lambda:self.alert(lambda:self.update_os('Concluída'))).pack(side='left',padx=3)
         ttk.Button(bar,text='Imprimir OS',command=lambda:self.alert(self.print_os)).pack(side='left',padx=3)
         self.os_tree=tree(tab,['OS','Orçamento','Data','Cliente','Veículo','Mecânico','Status','Valor'])
 
-    def approve_quote(self):
-        qid=self.maps['quotes'].get(self.os_quote.get())
-        if not qid:raise ValueError('Selecione o orçamento.')
+    def change_quote_status(self, status):
+        qid=self.picked(self.quote_tree)
+        if not qid:raise ValueError('Selecione um orçamento na tabela primeiro.')
+        mech=self.maps.get('staff',{}).get(self.quote_mechanic.get())
+        self.decide_and_open_os(qid,status,mech)
+
+    def decide_and_open_os(self,qid,status,mechanic_id=None):
+        if status not in (APPROVED,REJECTED):raise ValueError('Status inválido.')
         with connect() as con:
-            self.quote_total(con,qid)
-            current=con.execute('SELECT status FROM orcamentos WHERE id=?',(qid,)).fetchone()[0]
-            if current!='Aguardando aprovação':raise ValueError('Orçamento não está aguardando aprovação.')
-            if not messagebox.askyesno('Confirmação','A aprovação do cliente foi obtida e registrada fora do sistema?'):return
-            con.execute("UPDATE orcamentos SET status='Aprovado' WHERE id=?",(qid,))
-        self.refresh_extended()
+            row=con.execute("""SELECT o.status,c.nome,coalesce(v.placa,''),o.descricao
+            FROM orcamentos o JOIN clientes c ON c.id=o.cliente_id JOIN veiculos v ON v.id=o.veiculo_id
+            WHERE o.id=?""",(qid,)).fetchone()
+        if row is None:raise ValueError('Orçamento não encontrado.')
+        if row[0]!=PENDING:raise ValueError('Este orçamento não está mais aguardando aprovação.')
+        prompt=(f'Orçamento #{qid:06d} — {row[1]} / {row[2]}\n'
+                f'{row[3]}\n\n'
+                +('Confirma que o cliente aprovou este orçamento? A OS será criada e peças do estoque serão baixadas.'
+                  if status==APPROVED else 'Confirma que este orçamento foi rejeitado?'))
+        if not messagebox.askyesno('Confirmação de orçamento',prompt):return
+        with connect() as con:
+            osid=decide_quote(con,qid,status,mechanic_id=mechanic_id)
+        self.refresh_all();self.refresh_extended()
+        if osid:
+            self.select_order(osid)
+            messagebox.showinfo('Orçamento aprovado',
+                f'Orçamento aprovado. OS #{osid:06d} aberta.\n'
+                'Abra Checklist para registrar entrada e fotos.\n'
+                'O total aparecerá como valor a receber; o caixa só aumenta quando o pagamento for registrado.')
+        else:messagebox.showinfo('Orçamento rejeitado','Rejeição registrada no histórico. Nenhum valor lançado no caixa.')
+
+    def approve_quote(self):
+        qid=self.maps.get('quotes',{}).get(self.os_quote.get())
+        if not qid:raise ValueError('Selecione um orçamento para aprovar.')
+        mech=self.maps.get('staff',{}).get(self.os_mechanic.get())
+        self.decide_and_open_os(qid,APPROVED,mech)
+
+    def select_order(self,osid):
+        for widget in self.os_tree.get_children():
+            if int(self.os_tree.item(widget,'values')[0])==osid:
+                self.os_tree.selection_set(widget);self.os_tree.see(widget);break
+        for combo in (self.ck_os,self.pay_os):
+            for title,value in self.maps.get('os',{}).items():
+                if value==osid:combo.set(title);break
+        self.fill_os_cash()
+        self.display_checklist_client()
 
     def create_os(self):
         qid=self.maps['quotes'].get(self.os_quote.get());mechanic=self.maps['staff'].get(self.os_mechanic.get())
@@ -287,31 +344,111 @@ class App(BaseApp):
     def make_finance(self):
         tab=self.scroll_tab('Caixa')
         ttk.Label(tab,text='Recebimentos e despesas',font=('Segoe UI',15,'bold')).pack(anchor='w')
+        ttk.Label(tab,text='Busque cliente, placa, nº da OS, código ou nome do produto.').pack(anchor='w',pady=4)
+        line=ttk.Frame(tab);line.pack(fill='x',pady=4)
+        ttk.Label(line,text='Pesquisar',width=19).pack(side='left')
+        self.cash_search=tk.StringVar()
+        ent=ttk.Entry(line,textvariable=self.cash_search);ent.pack(side='left',fill='x',expand=True,padx=5)
+        ent.bind('<KeyRelease>',self.refresh_cash_search)
+        ttk.Button(line,text='Buscar',command=self.refresh_cash_search).pack(side='left')
+        self.cash_found=ttk.Combobox(tab,state='readonly',width=72)
+        self.cash_found.pack(fill='x',pady=3)
+        self.cash_found.bind('<<ComboboxSelected>>',lambda e:self.pick_cash_found())
+        self.cash_hint=ttk.Label(tab,text='Selecione um resultado para preencher os dados automaticamente.')
+        self.cash_hint.pack(anchor='w',pady=4)
+        self.cash_results={}
         self.pay_os=self.combo(tab,'OS vinculada (opcional)')
+        self.pay_os.bind('<<ComboboxSelected>>',lambda e:self.fill_os_cash())
         self.pay_method=self.combo(tab,'Forma de pagamento');self.pay_method['values']=['Dinheiro','Pix','Cartão débito','Cartão crédito','Transferência','Outro'];self.pay_method.set('Pix')
         self.pay_type=self.combo(tab,'Tipo');self.pay_type['values']=['Entrada','Saída'];self.pay_type.set('Entrada')
         f=ttk.LabelFrame(tab,text='Lançamento',padding=8);f.pack(fill='x',pady=8)
         self.pay=self.line(f,[('descricao','Descrição *'),('valor','Valor R$ *'),('data','Data (AAAA-MM-DD)')]);self.pay['data'].set(dt.date.today().isoformat())
-        ttk.Button(tab,text='Registrar lançamento',command=lambda:self.alert(self.save_payment)).pack(anchor='w')
+        actions=ttk.Frame(tab);actions.pack(fill='x')
+        ttk.Button(actions,text='Registrar pagamento / despesa',command=lambda:self.alert(self.save_payment)).pack(side='left',padx=3)
+        ttk.Button(actions,text='Comprovante PDF (não fiscal)',command=lambda:self.alert(self.payment_receipt)).pack(side='left',padx=3)
+        ttk.Label(tab,text='O comprovante é NÃO FISCAL. NF-e/NFC-e/NFS-e exigem integração fiscal válida.').pack(anchor='w',pady=6)
         self.finance_label=ttk.Label(tab,text='');self.finance_label.pack(anchor='w',pady=8)
         self.pay_tree=tree(tab,['ID','Data','Descrição','Método','Tipo','OS','Valor'])
 
+    def refresh_cash_search(self,event=None):
+        with connect() as con:found=search_cash(con,self.cash_search.get())
+        self.cash_results={label:(kind,ident) for kind,ident,label in found}
+        self.cash_found['values']=list(self.cash_results)
+        self.cash_found.set('')
+        self.cash_hint.configure(text=f'{len(found)} resultado(s) encontrados. Selecione um para continuar.')
+
+    def pick_cash_found(self):
+        found=self.cash_results.get(self.cash_found.get())
+        if not found:return
+        kind,ident=found
+        if kind=='OS':
+            for label,oid in self.maps.get('os',{}).items():
+                if oid==ident:self.pay_os.set(label);break
+            self.fill_os_cash()
+        else:
+            for label,pid in self.sale_product_map.items():
+                if pid==ident:
+                    self.sale_product.set(label)
+                    self.nav.set('Venda rápida');self.switch_module()
+                    messagebox.showinfo('Produto encontrado','Produto selecionado em Venda rápida. Defina quantidade e finalize o recebimento.')
+                    return
+            raise ValueError('Produto não encontrado em Venda rápida.')
+
+    def fill_os_cash(self):
+        osid=self.maps.get('os',{}).get(self.pay_os.get())
+        if not osid:return
+        with connect() as con:bal=order_balance(con,osid)
+        self.pay['descricao'].set(f'OS #{osid:06d} | {bal["cliente"]} | {bal["placa"]} | {bal["servico"]}')
+        self.pay['valor'].set(f'{bal["saldo"]/100:.2f}'.replace('.',','))
+        self.cash_hint.configure(text=(f'Cliente: {bal["cliente"]} | Veículo: {bal["placa"]} | '
+            f'Orçamento #{bal["orcamento"] or 0:06d} | OS #{osid:06d} | Mecânico: {bal["mecanico"]} | '
+            f'Total: {brl(bal["total"])} | Já pago: {brl(bal["recebido"])} | Falta: {brl(bal["saldo"])}'))
+        self.pay_type.set('Entrada')
+
     def save_payment(self):
-        label=self.pay['descricao'].get().strip();val=cash(self.pay['valor'].get());day=dt.date.fromisoformat(self.pay['data'].get()).isoformat();kind=self.pay_type.get();method=self.pay_method.get()
-        if not label or val<=0 or kind not in ('Entrada','Saída') or not method:raise ValueError('Preencha descrição, valor positivo, tipo e forma.')
-        osid=self.maps['os'].get(self.pay_os.get())
-        with connect() as con:
-            if osid and kind=='Entrada':
-                total=con.execute('SELECT valor FROM ordens WHERE id=?',(osid,)).fetchone()[0]
-                already=con.execute("SELECT coalesce(sum(valor),0) FROM pagamentos WHERE ordem_id=? AND tipo='Entrada'",(osid,)).fetchone()[0]
-                if already+val>total:raise ValueError('Recebimento excede valor da OS.')
-            con.execute('INSERT INTO pagamentos(ordem_id,data,descricao,metodo,valor,tipo) VALUES(?,?,?,?,?,?)',(osid,day,label,method,val,kind))
+        label=self.pay['descricao'].get().strip();val=cash(self.pay['valor'].get());day=self.pay['data'].get().strip()
+        kind=self.pay_type.get();method=self.pay_method.get();osid=self.maps.get('os',{}).get(self.pay_os.get())
+        with connect() as con:pid=payment(con,osid,val,method,day,label,kind=kind)
+        self.last_payment_id=pid
         self.refresh_extended()
+        if osid:self.fill_os_cash()
+        messagebox.showinfo('Pagamento registrado',f'Lançamento #{pid:06d} registrado: {brl(val)} via {method}.')
+
+    def payment_receipt(self):
+        pid=self.picked(self.pay_tree)
+        if not pid:pid=getattr(self,'last_payment_id',None)
+        if not pid:raise ValueError('Selecione um lançamento na tabela para criar o comprovante.')
+        with connect() as con:
+            r=con.execute("""SELECT p.id,p.data,p.descricao,p.metodo,p.valor,p.tipo,p.ordem_id,
+              coalesce(c.nome,''),coalesce(v.placa,'') FROM pagamentos p
+              LEFT JOIN ordens o ON o.id=p.ordem_id LEFT JOIN clientes c ON c.id=o.cliente_id
+              LEFT JOIN veiculos v ON v.id=o.veiculo_id WHERE p.id=?""",(pid,)).fetchone()
+        if not r:raise ValueError('Lançamento não encontrado.')
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer
+        from reportlab.lib.units import mm
+        target=filedialog.asksaveasfilename(defaultextension='.pdf',
+            initialfile=f'Comprovante_NAO_FISCAL_{pid:06d}.pdf',filetypes=[('PDF','*.pdf')])
+        if not target:return
+        styles=getSampleStyleSheet();p=lambda text:Paragraph(html.escape(str(text or '-')),styles['Normal'])
+        story=[Paragraph('PDV WORD MECÂNICA',styles['Title']),
+             Paragraph('COMPROVANTE DE PAGAMENTO — NÃO FISCAL',styles['Heading2']),Spacer(1,6*mm),
+             p(f'Lançamento: #{r[0]:06d} | Data: {r[1]} | Tipo: {r[5]}'),
+             p(f'Cliente: {r[7]} | Veículo: {r[8]} | OS: {r[6] or "Sem vínculo"}'),
+             p(f'Descrição: {r[2]}'),p(f'Forma de pagamento: {r[3]}'),
+             Paragraph(f'VALOR: {brl(r[4])}',styles['Heading2']),Spacer(1,10*mm),
+             p('Este documento é comprovante interno de pagamento e NÃO substitui nota fiscal.')]
+        SimpleDocTemplate(target,pagesize=A4).build(story)
+        messagebox.showinfo('Comprovante',f'Comprovante não fiscal criado em:\n{target}\nAnexe-o manualmente no WhatsApp, se necessário.')
 
     def make_checklists(self):
         tab=self.scroll_tab('Checklist')
         ttk.Label(tab,text='Vistoria de entrada e saída',font=('Segoe UI',15,'bold')).pack(anchor='w')
         self.ck_os=self.combo(tab,'OS')
+        self.ck_os.bind('<<ComboboxSelected>>',lambda e:self.display_checklist_client())
+        self.ck_client_info=ttk.Label(tab,text='Escolha uma OS para preencher cliente e veículo automaticamente.')
+        self.ck_client_info.pack(anchor='w',pady=4)
         self.ck_stage=self.combo(tab,'Etapa');self.ck_stage['values']=['Entrada','Saída'];self.ck_stage.set('Entrada')
         f=ttk.LabelFrame(tab,text='Registro de vistoria',padding=8);f.pack(fill='x',pady=8)
         self.ck=self.line(f,[('km','KM'),('combustivel','Combustível'),('estado','Estado / avarias'),('acessorios','Acessórios'),('observacoes','Observações'),('foto','Caminho da foto (opcional)')])
@@ -319,6 +456,16 @@ class App(BaseApp):
         ttk.Button(row,text='Selecionar foto',command=self.choose_photo).pack(side='left',padx=3)
         ttk.Button(row,text='Registrar checklist',command=lambda:self.alert(self.save_checklist)).pack(side='left',padx=3)
         self.ck_tree=tree(tab,['ID','OS','Etapa','Data','KM','Estado','Foto'])
+
+    def display_checklist_client(self):
+        osid=self.maps.get('os',{}).get(self.ck_os.get())
+        if not osid:return
+        with connect() as con:
+            bal=order_balance(con,osid)
+            row=con.execute("""SELECT v.km FROM ordens o JOIN veiculos v ON v.id=o.veiculo_id WHERE o.id=?""",(osid,)).fetchone()
+        self.ck_client_info.configure(text=(f'OS #{osid:06d} | Cliente: {bal["cliente"]} | '
+            f'Veículo: {bal["placa"]} | Serviço: {bal["servico"]} | Mecânico: {bal["mecanico"]}'))
+        if row and not self.ck['km'].get():self.ck['km'].set(str(row[0] or 0))
 
     def choose_photo(self):
         path=filedialog.askopenfilename(filetypes=[('Fotos','*.png *.jpg *.jpeg *.webp'),('Todos','*.*')]);
@@ -330,7 +477,7 @@ class App(BaseApp):
         path=self.ck['foto'].get().strip()
         if path:
             src=Path(path)
-            if not src.is_file():raise ValueError('Imagem inexistente.')
+            if not src.is_file() or src.suffix.lower() not in ('.jpg','.jpeg','.png','.webp'):raise ValueError('Escolha uma foto JPG, PNG ou WEBP válida.')
             target=DB.parent/'fotos';target.mkdir(exist_ok=True)
             newfile=target/(dt.datetime.now().strftime('%Y%m%d%H%M%S%f')+src.suffix.lower());shutil.copy2(src,newfile);path=str(newfile)
         with connect() as con:con.execute('INSERT INTO checklists(ordem_id,etapa,km,combustivel,estado,acessorios,observacoes,foto_caminho) VALUES(?,?,?,?,?,?,?,?)',(oid,self.ck_stage.get(),int(self.ck['km'].get() or 0),self.ck['combustivel'].get(),self.ck['estado'].get(),self.ck['acessorios'].get(),self.ck['observacoes'].get(),path))
@@ -415,6 +562,9 @@ class App(BaseApp):
         self.description = tk.StringVar()
         ttk.Entry(box, textvariable=self.description).grid(row=2, column=1, columnspan=2, sticky='ew', padx=4)
         box.columnconfigure(1, weight=1)
+        self.quote_mechanic=ttk.Combobox(box,state='readonly',width=38)
+        ttk.Label(box,text='Mecânico responsável').grid(row=3,column=0,sticky='w',padx=4,pady=5)
+        self.quote_mechanic.grid(row=3,column=1,sticky='ew',padx=4)
         costs = ttk.LabelFrame(tab, text='Valores e validade', padding=8)
         costs.pack(fill='x', pady=5)
         self.q = self.line(costs, [('pecas', 'Peças R$'), ('mao', 'Mão de obra R$'),
@@ -424,6 +574,8 @@ class App(BaseApp):
         actions.pack(fill='x', pady=6)
         for i, (label, cmd) in enumerate([
             ('Salvar orçamento', self.save_quote),
+            ('Aprovar selecionado', lambda: self.alert(lambda: self.change_quote_status(APPROVED))),
+            ('Rejeitar selecionado', lambda: self.alert(lambda: self.change_quote_status(REJECTED))),
             ('Gerar ficha em PDF', lambda: self.alert(self.export_quote_pdf)),
             ('Imprimir ficha', lambda: self.alert(lambda: self.export_quote_pdf(print_after=True))),
             ('WhatsApp', self.whatsapp),
@@ -433,7 +585,7 @@ class App(BaseApp):
         for col in range(3): actions.columnconfigure(col, weight=1)
         self.quote_tree = tree(tab, ['Nº', 'Data', 'Cliente', 'Veículo', 'Total', 'Status'],
                                widths=[70, 115, 210, 220, 130, 160], height=9)
-        ttk.Label(tab, text='Selecione um orçamento na tabela para gerar ou imprimir o PDF.').pack(anchor='w')
+        ttk.Label(tab, text='Aprovar cria automaticamente OS e vincula estoque/cliente; dinheiro só entra ao receber.').pack(anchor='w')
 
     def refresh_quote_vehicles(self):
         cid = self.customers.get(self.quote_customer.get())
@@ -691,12 +843,16 @@ class App(BaseApp):
         ttk.Label(dates,text='Até').grid(row=0,column=2,padx=5)
         ttk.Entry(dates,textvariable=self.report_end,width=18).grid(row=0,column=3,padx=5)
         row=ttk.Frame(tab);row.pack(fill='x',pady=5)
+        for title,period in [('Hoje','hoje'),('Semana','semana'),('Mês','mes'),('Ano','ano')]:
+            ttk.Button(row,text=title,command=lambda x=period:self.set_report_period(x)).pack(side='left',padx=2)
         ttk.Button(row,text='Consultar período',command=lambda:self.alert(self.query_report)).pack(side='left',padx=4)
         ttk.Button(row,text='Exportar HTML',command=lambda:self.alert(self.report)).pack(side='left',padx=4)
         ttk.Button(row,text='Criar backup',command=lambda:self.alert(self.backup)).pack(side='left',padx=4)
         ttk.Button(row,text='Restaurar backup',command=lambda:self.alert(self.restore)).pack(side='left',padx=4)
         self.stats=ttk.Label(tab,text='Acesso protegido por senha',font=('Segoe UI',11,'bold'))
         self.stats.pack(anchor='w',pady=7)
+        self.quote_stats=ttk.Label(tab,text='Orçamentos aguardando / aprovados / rejeitados',font=('Segoe UI',11))
+        self.quote_stats.pack(anchor='w',pady=4)
         self.report_table=tree(tab,['Data','Origem','Nº','Descrição / produtos','Forma','Valor'],
                                 widths=[120,115,70,350,150,120],height=10)
         self.report_table.delete(*self.report_table.get_children())
@@ -737,12 +893,31 @@ class App(BaseApp):
         self.nav=ttk.Combobox(bar,state='readonly',width=28)
         self.nav.pack(side='left',fill='x',expand=True,padx=7)
         self.tabs={self.nb.tab(widget,'text'):widget for widget in self.nb.tabs()}
-        self.nav['values']=list(self.tabs)
+        self.nav['values']=[x for x in self.tabs if x!='Relatório de vendas']
         self.nav.bind('<<ComboboxSelected>>',self.switch_module)
         self.nav.set('Clientes')
         self.nb.pack(fill='both',expand=True,padx=6,pady=4)
         self.previous_tab=self.nb.select()
         self.nb.bind('<<NotebookTabChanged>>',self.on_tab_changed)
+
+    def open_reports_shortcut(self,event=None):
+        # Atalho global solicitado pelo usuário: Ctrl+A abre o módulo protegido.
+        if not hasattr(self,'tabs'):return
+        if self.nb.select()==str(self.tabs['Relatório de vendas']):
+            # Se já estiver dentro, não desbloqueia novamente.
+            return 'break'
+        self.nb.select(self.tabs['Relatório de vendas'])
+        return 'break'
+
+    def set_report_period(self,period):
+        now=dt.date.today()
+        if period=='hoje':start=now
+        elif period=='semana':start=now-dt.timedelta(days=now.weekday())
+        elif period=='mes':start=now.replace(day=1)
+        elif period=='ano':start=now.replace(month=1,day=1)
+        else:raise ValueError('Período desconhecido.')
+        self.report_start.set(start.isoformat());self.report_end.set(now.isoformat())
+        if self.report_granted:self.query_report()
 
     def switch_module(self,event=None):
         name=self.nav.get()
@@ -769,49 +944,48 @@ class App(BaseApp):
                 self.report_table.delete(*self.report_table.get_children())
                 self.stats.configure(text='Acesso protegido por senha')
         self.previous_tab=active
-        self.nav.set(label)
+        self.nav.set('Relatório de vendas (Ctrl+A)' if label=='Relatório de vendas' else label)
         if label=='Venda rápida':self.refresh_retail()
 
     def report_rows(self):
-        if not self.report_granted:raise ValueError('Acesso restrito. Entre com a senha no módulo Relatório de vendas.')
-        start=dt.date.fromisoformat(self.report_start.get().strip())
-        end=dt.date.fromisoformat(self.report_end.get().strip())
-        if end<start:raise ValueError('A data final deve ser igual ou posterior à inicial.')
+        if not self.report_granted:raise ValueError('Acesso restrito. Entre com Ctrl+A e a senha do responsável.')
         with connect() as con:
-            retail=con.execute('''SELECT substr(v.data,1,10),v.id,
-              coalesce(group_concat(i.descricao || ' x' || i.quantidade,'; '),'Produtos'),v.metodo,v.total
-              FROM vendas_balcao v JOIN vendas_balcao_itens i ON i.venda_id=v.id
-              WHERE substr(v.data,1,10) BETWEEN ? AND ? GROUP BY v.id ORDER BY v.data DESC''',
-              (start.isoformat(),end.isoformat())).fetchall()
-            services=con.execute('''SELECT p.data,p.id,coalesce(p.descricao,'Recebimento'),p.metodo,p.valor
-              FROM pagamentos p WHERE p.tipo='Entrada' AND p.data BETWEEN ? AND ? ORDER BY p.data DESC''',
-              (start.isoformat(),end.isoformat())).fetchall()
-        rows=[(day,'Balcão',vid,label,method,total) for day,vid,label,method,total in retail]
-        rows +=[(day,'Serviço / caixa',pid,label,method,total) for day,pid,label,method,total in services]
-        return sorted(rows,key=lambda x:(x[0],x[1],x[2]),reverse=True)
+            data=report_data(con,self.report_start.get().strip(),self.report_end.get().strip())
+        return data['rows']
 
     def query_report(self):
-        rows=self.report_rows()
+        if not self.report_granted:raise ValueError('Acesso restrito: pressione Ctrl+A e informe a senha.')
+        with connect() as con:
+            data=report_data(con,self.report_start.get().strip(),self.report_end.get().strip())
         self.report_table.delete(*self.report_table.get_children())
-        for day,origin,num,label,method,total in rows:
+        for day,origin,num,label,method,total in data['rows']:
             self.report_table.insert('','end',values=(day,origin,num,label,method,brl(total)))
-        totals={}
-        for day,origin,num,label,method,total in rows:totals[method]=totals.get(method,0)+total
-        methods='  |  '.join(f'{k}: {brl(v)}' for k,v in sorted(totals.items()))
-        self.stats.configure(text=f'{len(rows)} lançamento(s) | Total recebido: {brl(sum(r[5] for r in rows))}\n{methods}')
+        methods='  |  '.join(f'{k}: {brl(v)}' for k,v in sorted(data['methods'].items()))
+        self.stats.configure(text=(f'Entradas recebidas: {brl(data["cash_in"])} | Despesas: {brl(data["cash_out"])} '
+            f'| SALDO DO PERÍODO: {brl(data["balance"])}\n'
+            f'OS novas: {data["os_new"]} | Vendas balcão: {data["sales_count"]} '
+            f'| A receber em OS (total atual): {brl(data["due"])}\n{methods}'))
+        q=data['quotes'];v=data['quote_values']
+        self.quote_stats.configure(text=(f'Orçamentos no período: {sum(q.values())} | '
+          f'Aguardando: {q[PENDING]} ({brl(v[PENDING])}) | '
+          f'Aprovados: {q[APPROVED]} ({brl(v[APPROVED])}) | '
+          f'Rejeitados: {q[REJECTED]} ({brl(v[REJECTED])})'))
 
     def report(self):
-        rows=self.report_rows()
-        dest=filedialog.asksaveasfilename(defaultextension='.html',initialfile='Relatorio_Vendas_Mecanica.html',filetypes=[('HTML','*.html')])
+        if not self.report_granted:raise ValueError('Acesso restrito: Ctrl+A e senha.')
+        with connect() as con:data=report_data(con,self.report_start.get().strip(),self.report_end.get().strip())
+        dest=filedialog.asksaveasfilename(defaultextension='.html',initialfile='Relatorio_Oficina_Mecanica.html',filetypes=[('HTML','*.html')])
         if not dest:return
         body=''.join('<tr>'+''.join(f'<td>{html.escape(str(x))}</td>' for x in [day,origin,num,label,method,brl(total)])+'</tr>'
-                  for day,origin,num,label,method,total in rows)
-        total=sum(r[5] for r in rows)
-        content='<!doctype html><html lang="pt-br"><meta charset="utf-8"><title>Relatório de vendas</title><body style="font:14px Arial;margin:30px">'
-        content+=f'<h1>PDV Word Mecânica — Relatório de vendas</h1><p>Período: {html.escape(self.report_start.get())} até {html.escape(self.report_end.get())}</p>'
-        content+=f'<h2>Total recebido: {brl(total)}</h2><table border="1" cellspacing="0" cellpadding="7"><tr><th>Data</th><th>Origem</th><th>Nº</th><th>Descrição</th><th>Forma</th><th>Valor</th></tr>{body}</table></body></html>'
-        Path(dest).write_text(content,encoding='utf-8')
-        webbrowser.open(Path(dest).as_uri())
+                  for day,origin,num,label,method,total in data['rows'])
+        q=data['quotes']
+        content='<!doctype html><html lang="pt-br"><meta charset="utf-8"><title>Relatório da oficina</title><body style="font:14px Arial;margin:30px">'
+        content+=f'<h1>PDV Word Mecânica — Relatório por período</h1><p>{data["start"]} a {data["end"]}</p>'
+        content+=f'<h2>Recebimentos: {brl(data["cash_in"])} | Saídas: {brl(data["cash_out"])} | Saldo: {brl(data["balance"])}</h2>'
+        content+=f'<p>OS abertas: {data["os_new"]}. Orçamentos: {sum(q.values())}; aguardando: {q[PENDING]}; aprovados: {q[APPROVED]}; rejeitados: {q[REJECTED]}.</p>'
+        content+=f'<p>Valor a receber de OS ainda abertas ou concluídas (posição atual): {brl(data["due"])}.</p>'
+        content+=f'<table border="1" cellspacing="0" cellpadding="7"><tr><th>Data</th><th>Origem</th><th>Nº</th><th>Descrição</th><th>Forma</th><th>Valor</th></tr>{body}</table></body></html>'
+        Path(dest).write_text(content,encoding='utf-8');webbrowser.open(Path(dest).as_uri())
 
     def refresh_extended(self):
         with connect() as con:
@@ -825,13 +999,15 @@ class App(BaseApp):
             pays=con.execute('SELECT id,data,descricao,metodo,tipo,coalesce(ordem_id,0),valor FROM pagamentos ORDER BY id DESC').fetchall()
             cks=con.execute('SELECT id,ordem_id,etapa,data,km,coalesce(estado,""),coalesce(foto_caminho,"") FROM checklists ORDER BY id DESC').fetchall()
         self.maps={'stock':{f'{r[2]} (#{r[0]})':r[0] for r in stocks},'staff':{f'{r[1]} (#{r[0]})':r[0] for r in staff},'quotes':{f'#{r[0]:06d} | {r[1]} | {r[2]} | {r[3]}':r[0] for r in quotes},'customers':{f'{r[1]} (#{r[0]})':r[0] for r in customers},'os':{f'OS #{r[0]:06d} - {r[3]}':r[0] for r in orders}}
-        for widget,keys in [(self.item_quote,'quotes'),(self.os_quote,'quotes'),(self.item_stock,'stock'),(self.os_mechanic,'staff'),(self.ag_mech,'staff'),(self.ag_customer,'customers'),(self.pay_os,'os'),(self.ck_os,'os')]:
+        for widget,keys in [(self.item_quote,'quotes'),(self.os_quote,'quotes'),(self.item_stock,'stock'),(self.os_mechanic,'staff'),(self.quote_mechanic,'staff'),(self.ag_mech,'staff'),(self.ag_customer,'customers'),(self.pay_os,'os'),(self.ck_os,'os')]:
             old=widget.get();widget['values']=list(self.maps[keys]);widget.set(old if old in self.maps[keys] else '')
         for widget,values in [(self.stock_tree,[(r[0],r[1],r[2],r[3],brl(r[4]),brl(r[5]),r[6],r[7]) for r in stocks]),(self.staff_tree,staff),(self.items_tree,[(r[0],r[1],r[2],r[3],brl(r[4]),brl(round(r[3]*r[4]))) for r in items]),(self.os_tree,[(r[0],r[1],r[2],r[3],r[4],r[5],r[6],brl(r[7])) for r in orders]),(self.schedule_tree,sched),(self.pay_tree,[(r[0],r[1],r[2],r[3],r[4],r[5] or '-',brl(r[6])) for r in pays]),(self.ck_tree,cks)]:
             widget.delete(*widget.get_children())
             for row in values:widget.insert('','end',values=row)
         inc=sum(r[6] for r in pays if r[4]=='Entrada');out=sum(r[6] for r in pays if r[4]=='Saída')
-        self.finance_label.config(text=f'Entradas: {brl(inc)}  |  Saídas: {brl(out)}  |  Saldo: {brl(inc-out)}')
+        with connect() as con:
+            balc=con.execute('SELECT coalesce(sum(total),0) FROM vendas_balcao').fetchone()[0]
+        self.finance_label.config(text=f'Entradas: {brl(inc+balc)} (serviços/caixa + balcão)  |  Saídas: {brl(out)}  |  Saldo: {brl(inc+balc-out)}')
         if hasattr(self, "sale_product"):self.refresh_retail()
         if getattr(self, 'report_granted', False): self.query_report()
 
