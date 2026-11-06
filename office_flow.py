@@ -126,6 +126,8 @@ def payment(con, osid, value, method, day, description, kind='Entrada'):
     con.execute('BEGIN IMMEDIATE')
     if osid is not None and kind == 'Entrada':
         bal=order_balance(con,osid)
+        if bal['status']=='Cancelada':
+            raise ValueError('OS cancelada não pode receber pagamento.')
         if value>bal['saldo']:
             raise ValueError('Valor excede saldo a receber da OS: '+str(bal['saldo'])+' centavos.')
     return con.execute('INSERT INTO pagamentos(ordem_id,data,descricao,metodo,valor,tipo) VALUES(?,?,?,?,?,?)',
@@ -159,7 +161,7 @@ def report_data(con, start, end):
         amounts[method]=amounts.get(method,0)+value
     # Estoque/OS da oficina pode ser aprovado em outro período; usa saldo atual separado.
     due=con.execute('''SELECT coalesce(sum(max(0,o.valor-coalesce((SELECT sum(p.valor) FROM pagamentos p
-        WHERE p.ordem_id=o.id AND p.tipo='Entrada'),0))),0) FROM ordens o''').fetchone()[0]
+        WHERE p.ordem_id=o.id AND p.tipo='Entrada'),0))),0) FROM ordens o WHERE o.status != 'Cancelada' ''').fetchone()[0]
     revenue=sum(v[-1] for v in sales)+sum(v[4] for v in incoming)
     expense=sum(v[4] for v in outgoing)
     return dict(start=start,end=end,quotes=counts,quote_values=vals,os_new=os_new,

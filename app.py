@@ -16,7 +16,7 @@ import urllib.parse
 from base_app import App as BaseApp, connect, init_db, DB, brl, money_to_cents
 from office_flow import migrate, decide_quote, order_balance, report_data, search_cash, payment, APPROVED, REJECTED, PENDING
 
-APP_VERSION='1.3.0 - Avaliação operacional'
+APP_VERSION='1.4.0 - Avaliação operacional'
 
 def extra_db():
     with connect() as con:
@@ -527,8 +527,12 @@ class App(BaseApp):
         with connect() as con:
             row=con.execute('''SELECT o.id,o.abertura,o.status,o.problema,o.diagnostico,o.valor,c.nome,c.documento,c.whatsapp,v.tipo,v.marca,v.modelo,v.placa,v.serie,o.orcamento_id FROM ordens o JOIN clientes c ON o.cliente_id=c.id JOIN veiculos v ON o.veiculo_id=v.id WHERE o.id=?''',(oid,)).fetchone()
             items=con.execute('SELECT tipo,descricao,quantidade,unitario FROM orcamento_itens WHERE orcamento_id=?',(row[-1],)).fetchall()
+            cfg=self.office_settings(con) if hasattr(self,'office_settings') else dict(name='PDV Word Mecânica',document='',address='',city='',phone='')
+            mechanic=con.execute('''SELECT coalesce(p.nome,''),coalesce(p.documento,'') FROM ordens o
+               LEFT JOIN profissionais p ON p.id=o.profissional_id WHERE o.id=?''',(oid,)).fetchone()
         cells=''.join(f'<tr><td>{html.escape(typ)}</td><td>{html.escape(name)}</td><td>{qty:g}</td><td>{brl(price)}</td></tr>' for typ,name,qty,price in items)
-        body=f'<h1>PDV WORD MECÂNICA</h1><h2>Ordem de Serviço #{row[0]:06d}</h2><p>Data: {row[1]} | Status: {html.escape(row[2])}</p><h3>Cliente</h3><p>{html.escape(row[6])} | {html.escape(row[7] or "")} | {html.escape(row[8] or "")}</p><h3>Veículo</h3><p>{html.escape(" ".join(str(x or "") for x in row[9:12]))} | Placa: {html.escape(row[12] or "")} | Chassi: {html.escape(row[13] or "")}</p><h3>Serviço</h3><p>Problema: {html.escape(row[3] or "")}<br>Diagnóstico: {html.escape(row[4] or "")}</p><table border="1" cellspacing="0" cellpadding="7"><tr><th>Tipo</th><th>Descrição</th><th>Qtde</th><th>Unitário</th></tr>{cells}</table><h2>Total: {brl(row[5])}</h2><hr><p>Assinatura do cliente: _____________________________________</p>'
+        header=f'<h1>{html.escape(cfg["name"])}</h1><p>CPF/CNPJ: {html.escape(cfg["document"])} | {html.escape(cfg["address"])} | {html.escape(cfg["city"])}<br>Contato: {html.escape(cfg["phone"])} | Impressão: {dt.datetime.now().strftime("%d/%m/%Y %H:%M")}</p>'
+        body=f'{header}<h2>Ordem de Serviço #{row[0]:06d}</h2><p>Data: {row[1]} | Status: {html.escape(row[2])}</p><h3>Cliente</h3><p>{html.escape(row[6])} | {html.escape(row[7] or "")} | {html.escape(row[8] or "")}</p><h3>Veículo</h3><p>{html.escape(" ".join(str(x or "") for x in row[9:12]))} | Placa: {html.escape(row[12] or "")} | Chassi: {html.escape(row[13] or "")}</p><h3>Serviço</h3><p>Mecânico: {html.escape((mechanic or (None,None))[0] or "Não informado")} | CPF: {html.escape((mechanic or (None,None))[1] or "Não informado")}<br>Problema: {html.escape(row[3] or "")}<br>Diagnóstico: {html.escape(row[4] or "")}</p><table border="1" cellspacing="0" cellpadding="7"><tr><th>Tipo</th><th>Descrição</th><th>Qtde</th><th>Unitário</th></tr>{cells}</table><h2>Total: {brl(row[5])}</h2><hr><p>Assinatura do cliente: _____________________________________</p>'
         target=Path(tempfile.gettempdir())/f'PDV_Mecanica_OS_{oid:06d}.html';target.write_text('<!doctype html><html lang="pt-br"><meta charset="utf-8"><title>OS</title><body style="font:15px Arial;max-width:850px;margin:40px auto">'+body+'</body></html>',encoding='utf-8')
         webbrowser.open(target.as_uri())
 
@@ -671,6 +675,10 @@ class App(BaseApp):
                 JOIN veiculos v ON v.id=o.veiculo_id WHERE o.id=?''',(qid,)).fetchone()
             items = con.execute('SELECT tipo,descricao,quantidade,unitario FROM orcamento_itens WHERE orcamento_id=? ORDER BY id', (qid,)).fetchall()
             total = self.quote_total(con, qid)
+            identity = self.office_settings(con) if hasattr(self, 'office_settings') else dict(name='PDV Word Mecânica',document='',address='',city='',phone='')
+            worker = con.execute('''SELECT coalesce(p.nome,''),coalesce(p.documento,'')
+                  FROM orcamentos o LEFT JOIN profissionais p ON p.id=o.profissional_id
+                  WHERE o.id=?''',(qid,)).fetchone()
         if row is None:raise ValueError('Orçamento não encontrado.')
         target = filedialog.asksaveasfilename(defaultextension='.pdf',initialfile=f'Orcamento_Mecanica_{qid:06d}.pdf',
                     filetypes=[('Documento PDF','*.pdf')])
@@ -680,8 +688,12 @@ class App(BaseApp):
         styles.add(ParagraphStyle(name='MSmall',fontName='Helvetica',fontSize=9,leading=13))
         styles.add(ParagraphStyle(name='MSection',fontName='Helvetica-Bold',fontSize=11,leading=15,spaceBefore=11,spaceAfter=5))
         p = lambda s: Paragraph(html.escape(str(s or '-')), styles['MSmall'])
-        story = [Paragraph('PDV WORD MECÂNICA',styles['MHeading']),
-                 p('FICHA TÉCNICA / ORÇAMENTO Nº %06d' % qid),Spacer(1,5*mm)]
+        story = [Paragraph(html.escape(identity['name']),styles['MHeading']),
+                 p('FICHA TÉCNICA / ORÇAMENTO Nº %06d' % qid),
+                 p('CNPJ/CPF do estabelecimento: '+identity['document']),
+                 p('Endereço: '+identity['address']+'  |  Cidade/UF: '+identity['city']),
+                 p('Telefone: '+identity['phone']),
+                 p('Documento gerado em: '+dt.datetime.now().strftime('%d/%m/%Y %H:%M')),Spacer(1,5*mm)]
         story += [Paragraph('Cliente',styles['MSection']),
                   p(f'Nome: {row[9]}  |  CPF/CNPJ: {row[10]}  |  Nascimento: {row[11]}'),
                   p(f'Telefone: {row[12]}  |  E-mail: {row[13]}'),p(f'Endereço: {row[14]}')]
@@ -691,6 +703,7 @@ class App(BaseApp):
                   p(f'Chassi / Série: {row[21]}  |  Renavam: {row[22]}')]
         story += [Paragraph('Atendimento',styles['MSection']),
                   p(f'Emissão: {row[1]}  |  Validade: {row[2]}  |  Situação: {row[5]}'),
+                  p(f'Mecânico: {(worker or (None, None))[0] or "Não definido"}  |  Documento: {(worker or (None,None))[1] or "Não informado"}'),
                   p(f'Problema / Serviços: {row[3]}'),p(f'Observações: {row[4]}'),
                   Paragraph('Produtos, peças e mão de obra',styles['MSection'])]
         data = [[p('TIPO'),p('DESCRIÇÃO'),p('QTD'),p('VALOR UNIT.'),p('SUBTOTAL')]]
@@ -1010,6 +1023,11 @@ class App(BaseApp):
         self.finance_label.config(text=f'Entradas: {brl(inc+balc)} (serviços/caixa + balcão)  |  Saídas: {brl(out)}  |  Saldo: {brl(inc+balc-out)}')
         if hasattr(self, "sale_product"):self.refresh_retail()
         if getattr(self, 'report_granted', False): self.query_report()
+
+from ui_v14 import UnifiedExperience
+class AppV14(UnifiedExperience, App):
+    pass
+App = AppV14
 
 if __name__=='__main__':
     init_db();extra_db();App().mainloop()
