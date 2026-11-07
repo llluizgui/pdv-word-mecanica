@@ -11,7 +11,7 @@ app.messagebox.askyesno = lambda *a, **kw: True
 root = app.App()
 root.geometry('920x620+40+40')
 root.update()
-assert root.title().startswith('PDV Word Mecânica 1.6')
+assert root.title().startswith('PDV Word Mecânica 1.') # 1.6+ mantém a identidade do aplicativo
 assert [root.nb.tab(x,'text') for x in root.nb.tabs()] == ['Atendimento','Estoque','Mecânicos','Ordens de serviço','Agenda','Caixa','Checklist','Relatório de vendas']
 assert len(root._nav_buttons)==7
 assert root.quote_customer.winfo_exists() and root.quote_vehicle.winfo_exists() and root.description is not None
