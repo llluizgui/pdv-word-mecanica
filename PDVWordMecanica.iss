@@ -1,5 +1,5 @@
 #define MyAppName "PDV Word Mecanica"
-#define MyAppVersion "1.6.0"
+#define MyAppVersion "1.6.1"
 #define MyAppExeName "PDVWordMecanica.exe"
 [Setup]
 AppId={{F4EC1DD2-F9C5-4FD5-AE62-BA3E65FEE9A3}
@@ -8,9 +8,9 @@ AppVersion={#MyAppVersion}
 DefaultDirName={autopf}\PDV Word Mecanica
 DefaultGroupName={#MyAppName}
 OutputDir=instalador
-OutputBaseFilename=PDVWord_Mecanica_Setup_1.6.0
-Compression=lzma
-SolidCompression=yes
+OutputBaseFilename=PDVWord_Mecanica_Setup_1.6.1
+Compression=none
+SolidCompression=no
 WizardStyle=modern
 PrivilegesRequired=lowest
 [Files]
