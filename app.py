@@ -16,7 +16,7 @@ import urllib.parse
 from base_app import App as BaseApp, connect, init_db, DB, brl, money_to_cents
 from office_flow import migrate, decide_quote, order_balance, report_data, search_cash, payment, APPROVED, REJECTED, PENDING
 
-APP_VERSION='1.4.0 - Avaliação operacional'
+APP_VERSION='1.6.0 - Avaliação operacional'
 
 def extra_db():
     with connect() as con:
@@ -1030,7 +1030,10 @@ class AppV14(UnifiedExperience, App):
     pass
 class AppV15(ModernExperience, AppV14):
     pass
-App = AppV15
+from ui_v16 import ConnectedFlow
+class AppV16(ConnectedFlow, AppV15):
+    pass
+App = AppV16
 
 if __name__=='__main__':
     init_db();extra_db();App().mainloop()
