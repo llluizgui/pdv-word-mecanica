@@ -1,0 +1,61 @@
+name: Verificar instalador com Defender
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/verificacao-antivirus.yml
+
+permissions:
+  contents: read
+
+jobs:
+  avaliar:
+    runs-on: windows-2022
+    steps:
+      - name: Inspecionar Microsoft Defender
+        id: defender
+        shell: pwsh
+        run: |
+          $status = Get-MpComputerStatus -ErrorAction SilentlyContinue
+          if (-not $status) { throw 'Microsoft Defender indisponivel neste runner. Nao possivel certificar seguranca.' }
+          Write-Host "AntivirusEnabled: $($status.AntivirusEnabled)"
+          Write-Host "RealTimeProtectionEnabled: $($status.RealTimeProtectionEnabled)"
+          Write-Host "AntivirusSignatureVersion: $($status.AntivirusSignatureVersion)"
+          if (-not $status.AntivirusEnabled) { throw 'Microsoft Defender nao esta ativo. Sem resultado de analise.' }
+      - name: Baixar arquivo publicado sem executar
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force -Path '.\amostra' | Out-Null
+          gh release download 'v1.6.0-avaliacao' --repo '${{ github.repository }}' --pattern 'PDVWord_Mecanica_Setup_1.6.0.exe' --dir '.\amostra'
+          if ($LASTEXITCODE -ne 0) { throw 'Erro ao baixar amostra. Nao verificado.' }
+          $path = (Resolve-Path '.\amostra\PDVWord_Mecanica_Setup_1.6.0.exe').Path
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $path).Hash.ToLowerInvariant()
+          Write-Host "SHA256: $hash"
+          if ($hash -ne '887935e834a2e1f9f26c2c93d1e152dc0e453d124c13915148d433ed9ff3cb47') {
+            throw 'Hash diferente do asset publicado. Suspender distribuicao.'
+          }
+      - name: Analisar com Windows Defender sem executar
+        shell: pwsh
+        run: |
+          $path = (Resolve-Path '.\amostra\PDVWord_Mecanica_Setup_1.6.0.exe').Path
+          try {
+            Update-MpSignature -ErrorAction Continue
+            Start-MpScan -ScanType CustomScan -ScanPath $path -ErrorAction Stop
+          } catch {
+            Write-Warning "Defender retornou: $_"
+          }
+          $detect = @(Get-MpThreatDetection -ErrorAction SilentlyContinue | Where-Object {
+            ($_.Resources -join ' ') -like '*PDVWord_Mecanica_Setup_1.6.0.exe*'
+          })
+          if ($detect.Count -gt 0) {
+            foreach ($d in $detect) {
+              Write-Host "Detectado: ID=$($d.ThreatID) Resources=$($d.Resources -join ';')"
+            }
+            throw 'Instalador detectado como ameaca. Nao distribuir.'
+          }
+          if (-not (Test-Path $path)) { throw 'Arquivo removido/quarentenado durante analise. Nao distribuir.' }
+          Write-Host 'Sem deteccao no runner, mas isso NAO garante ausencia de malware nem substitui analise no PC afetado.'
