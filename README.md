@@ -1,4 +1,4 @@
-# PDV Word Mecânica 1.5.0 — Atendimento integrado (versão de avaliação)
+# PDV Word Mecânica 1.6.0 — Atendimento integrado (versão de avaliação)
 
 Sistema desktop Windows 10/11 para oficinas de automóveis e motos, separado do PDV Word de mercados. Banco SQLite local em `%LOCALAPPDATA%\PDVWordMecanica\mecanica.db` (não é apagado na atualização).
 
@@ -14,14 +14,14 @@ Sistema desktop Windows 10/11 para oficinas de automóveis e motos, separado do 
 
 ## Instalador Windows
 
-O GitHub Actions compila a versão para Windows e publica em Releases como `PDVWord_Mecanica_Setup_1.5.0.exe`. O cliente não precisa de Python. A instalação usa a mesma identidade de aplicativo das versões anteriores e mantém os dados em `%LOCALAPPDATA%` fora da pasta de instalação.
+O GitHub Actions compila a versão para Windows e publica em Releases como `PDVWord_Mecanica_Setup_1.6.0.exe`. O cliente não precisa de Python. A instalação usa a mesma identidade de aplicativo das versões anteriores e mantém os dados em `%LOCALAPPDATA%` fora da pasta de instalação.
 
 Se gerar no próprio PC, use `GERAR_INSTALADOR_WINDOWS.bat` com Python 3.12, PyInstaller e Inno Setup 6.
 
 ## Avisos importantes
 
 - **Não há emissão real de NF-e, NFC-e ou NFS-e, TEF ou conexão com adquirente.** O comprovante **não substitui nota fiscal**. Integração fiscal só pode ser anunciada após implementação, configuração e validação legal da oficina.
-- A versão 1.4 é **candidata a testes**, não foi homologada em equipamento real da oficina; faça testes antes de uso comercial e consulte o contador.
+- A versão 1.6 é **candidata a testes**, não foi homologada em equipamento real da oficina; faça testes antes de uso comercial e consulte o contador.
 - Dados de clientes ficam **apenas no computador local** e não são enviados ao GitHub. Faça backup do banco SQLite e da pasta `fotos`, e teste a recuperação antes de operar.
 - Ao executar `Ctrl+A`, evite compartilhar a senha de acesso gerencial. O restante das operações não tem autenticação por perfil nesta versão.
 
@@ -32,3 +32,14 @@ Python 3.12 (stdlib `tkinter`, `sqlite3`) e ReportLab 4.4.9 para PDFs. PyInstall
 ## Interface moderna 1.5
 Atendimento unico em cinco etapas: cliente, veiculo, orcamento, itens e revisao.
 Menu lateral, resumo dinamico, rolagem em monitores menores e dados locais preservados.
+
+## Fluxo aperfeiçoado 1.6
+
+- Na **Central de Atendimento**, selecione um cliente existente pelo nome para carregar nome, CPF/CNPJ, nascimento, WhatsApp, e-mail e endereço. Para novos clientes, preencha e clique em **Salvar e selecionar cliente**.
+- Selecionar cliente filtra os **veículos daquele cliente**; selecionar veículo carrega seus dados. Salvar cadastro existente atualiza a mesma ficha (não cria duplicado).
+- Complete defeito, mecânico, peças, mão de obra e desconto; confira a **Revisão final** antes de salvar o orçamento. Aprovação e rejeição são ações distintas; apenas aprovação gera uma OS.
+- **Checklist**: selecione cliente e veículo, podendo vincular uma OS, caso já exista. As fotos são copiadas para a pasta local `%LOCALAPPDATA%\\PDVWordMecanica\\fotos` e registradas na tabela `vistorias_atendimento`.
+- O **Caixa** ganhou um cabeçalho mais visível. Pagamentos, descontos e relatórios mantêm as regras já testadas.
+- A criação de checklists sem OS não altera os registros legados da tabela `checklists`; ambas as fontes aparecem no histórico.
+
+**Importante:** comprovante PDF **não é nota fiscal**. Nada nesta versão transmite NF-e, NFC-e ou NFS-e.
