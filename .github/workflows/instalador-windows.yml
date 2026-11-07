@@ -6,6 +6,8 @@ on:
     paths:
       - app.py
       - ui_v16.py
+      - workflow_v17.py
+      - test_workflow_v17.py
       - test_flow_v16.py
       - test_ui_v16.py
       - PDVWordMecanica.iss
@@ -17,7 +19,7 @@ permissions:
 
 jobs:
   compilar:
-    name: Testar e compilar Setup.exe v1.6
+    name: Testar e compilar Setup.exe v1.7
     runs-on: windows-2022
     steps:
       - name: Baixar repositorio exclusivo da oficina
@@ -32,8 +34,8 @@ jobs:
       - name: Instalar bibliotecas e validar codigo
         shell: pwsh
         run: |
-          python -m py_compile app.py base_app.py office_flow.py ui_v14.py ui_v15.py ui_v16.py
-          python -m py_compile test_flow.py test_integrated.py test_ui_v16.py test_flow_v16.py
+          python -m py_compile app.py base_app.py office_flow.py ui_v14.py ui_v15.py ui_v16.py workflow_v17.py
+          python -m py_compile test_flow.py test_integrated.py test_ui_v16.py test_flow_v16.py test_workflow_v17.py
           python -m pip install --upgrade pip
           python -m pip install pyinstaller==6.16.0 reportlab==4.4.9
 
@@ -48,6 +50,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Teste visual falhou' }
           python test_flow_v16.py
           if ($LASTEXITCODE -ne 0) { throw 'Teste de persistencia falhou' }
+          python test_workflow_v17.py
+          if ($LASTEXITCODE -ne 0) { throw 'Teste de fechamento, fotos e extras da 1.7 falhou' }
 
       - name: Compilar aplicativo Windows sem Python no computador do cliente
         shell: pwsh
@@ -68,7 +72,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar Inno Setup' }
           }
 
-      - name: Gerar instalador 1.6.1
+      - name: Gerar instalador 1.7.0
         shell: pwsh
         run: |
           $iscc = @(
@@ -78,7 +82,7 @@ jobs:
           if (-not $iscc) { throw 'ISCC.exe nao encontrado' }
           & $iscc PDVWordMecanica.iss
           if ($LASTEXITCODE -ne 0) { throw 'Compilacao do Setup falhou' }
-          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.6.1.exe')) { throw 'Setup nao foi gerado' }
+          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.7.0.exe')) { throw 'Setup nao foi gerado' }
 
       - name: Verificar executaveis com Microsoft Defender
         shell: pwsh
@@ -93,7 +97,7 @@ jobs:
           catch { Write-Warning "Nao foi possivel atualizar assinaturas: $_" }
           $targets = @(
             'dist/PDVWordMecanica/PDVWordMecanica.exe',
-            'instalador/PDVWord_Mecanica_Setup_1.6.1.exe'
+            'instalador/PDVWord_Mecanica_Setup_1.7.0.exe'
           )
           foreach ($f in $targets) {
             $full = (Resolve-Path $f -ErrorAction Stop).Path
@@ -106,15 +110,15 @@ jobs:
             }
             Write-Host "Analise pontual sem deteccao no runner: $f"
           }
-          $hash = (Get-FileHash 'instalador/PDVWord_Mecanica_Setup_1.6.1.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash *PDVWord_Mecanica_Setup_1.6.1.exe" | Set-Content 'instalador/SHA256SUMS.txt' -Encoding ascii
+          $hash = (Get-FileHash 'instalador/PDVWord_Mecanica_Setup_1.7.0.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *PDVWord_Mecanica_Setup_1.7.0.exe" | Set-Content 'instalador/SHA256SUMS.txt' -Encoding ascii
 
       - name: Disponibilizar artefato no Actions
         uses: actions/upload-artifact@v4
         with:
-          name: PDVWord-Mecanica-Setup-1.6.1
+          name: PDVWord-Mecanica-Setup-1.7.0
           path: |
-            instalador/PDVWord_Mecanica_Setup_1.6.1.exe
+            instalador/PDVWord_Mecanica_Setup_1.7.0.exe
             instalador/SHA256SUMS.txt
           retention-days: 30
           if-no-files-found: error
@@ -124,12 +128,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $asset = 'instalador/PDVWord_Mecanica_Setup_1.6.1.exe'
-          $tag = 'v1.6.1-avaliacao'
+          $asset = 'instalador/PDVWord_Mecanica_Setup_1.7.0.exe'
+          $tag = 'v1.7.0-avaliacao'
           gh release view $tag 2>$null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $asset 'instalador/SHA256SUMS.txt' --clobber
           } else {
-            gh release create $tag $asset 'instalador/SHA256SUMS.txt' --title 'PDV Word Mecânica 1.6.1 - Atendimento conectado' --notes 'Recompilacao experimental 1.6.1 sem compactacao extra e com analise pontual do Microsoft Defender no ambiente de compilacao. Verificacao local no PC de destino ainda e obrigatoria. Sem nota fiscal/TEF. Nao utilizar em ambiente comercial ate validacao.' --prerelease
+            gh release create $tag $asset 'instalador/SHA256SUMS.txt' --title 'PDV Word Mecânica 1.7.0 - Atendimento completo' --notes 'Versao de avaliacao 1.7: cadastro vinculado, loja com logo e CNPJ, pecas fora de estoque, OS, vistoria com fotos, venda de extras, PDF de atendimento. Analise pontual do Defender nao garante ausencia de ameacas. Sem NF/TEF. Validar no Windows antes de uso comercial.' --prerelease
           }
           if ($LASTEXITCODE -ne 0) { throw 'Nao foi possivel publicar o instalador' }
