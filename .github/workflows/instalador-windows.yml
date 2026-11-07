@@ -4,9 +4,11 @@ on:
   push:
     branches: [main]
     paths:
-      - source.tar.xz.b64
-      - ui_v15.py
-      - test_ui_v15.py
+      - app.py
+      - ui_v16.py
+      - test_flow_v16.py
+      - test_ui_v16.py
+      - PDVWordMecanica.iss
       - .github/workflows/instalador-windows.yml
   workflow_dispatch:
 
@@ -15,93 +17,46 @@ permissions:
 
 jobs:
   compilar:
-    name: Compilar e disponibilizar Setup.exe
+    name: Testar e compilar Setup.exe v1.6
     runs-on: windows-2022
     steps:
-      - name: Obter projeto exclusivo
+      - name: Baixar repositorio exclusivo da oficina
         uses: actions/checkout@v4
-      - name: Configurar Python 3.12
+
+      - name: Configurar Python no Windows
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           architecture: x64
-      - name: Extrair arquivos originais da versão 1.4
+
+      - name: Instalar bibliotecas e validar codigo
         shell: pwsh
         run: |
-          @'
-          from pathlib import Path
-          import base64, tarfile
-          source = Path("source.tar.xz.b64")
-          if not source.is_file(): raise SystemExit("Pacote fonte nao encontrado")
-          raw = base64.b64decode(source.read_text(encoding="utf-8").strip(), validate=True)
-          Path("source.tar.xz").write_bytes(raw)
-          with tarfile.open("source.tar.xz", "r:xz") as ar:
-              names = ar.getnames()
-              allowed = {"app.py", "base_app.py", "office_flow.py", "ui_v14.py", "test_flow.py", "test_integrated.py", "README.md", "PDVWordMecanica.iss", "GERAR_INSTALADOR_WINDOWS.bat", "INICIAR_WINDOWS.bat"}
-              if not set(names).issubset(allowed): raise SystemExit("Arquivos inesperados no pacote")
-              ar.extractall(".", filter="data")
-          for file in ("app.py", "base_app.py", "office_flow.py", "ui_v14.py", "test_flow.py", "test_integrated.py", "PDVWordMecanica.iss"):
-              if not Path(file).is_file(): raise SystemExit(f"Falta arquivo: {file}")
-          print("Fonte extraida corretamente.")
-          '@ | python -
-      - name: Integrar interface moderna 1.5 ao aplicativo
-        shell: pwsh
-        run: |
-          @'
-          from pathlib import Path
-          app = Path("app.py")
-          s = app.read_text(encoding="utf-8")
-          old = """from ui_v14 import UnifiedExperience
-          class AppV14(UnifiedExperience, App):
-              pass
-          App = AppV14"""
-          new = """from ui_v14 import UnifiedExperience
-          from ui_v15 import ModernExperience
-          class AppV14(UnifiedExperience, App):
-              pass
-          class AppV15(ModernExperience, AppV14):
-              pass
-          App = AppV15"""
-          if old not in s: raise SystemExit("Ponto de integracao da v1.4 nao encontrado.")
-          app.write_text(s.replace(old, new), encoding="utf-8")
-          setup = Path("PDVWordMecanica.iss")
-          raw = setup.read_text(encoding="utf-8")
-          if "1.4.0" not in raw: raise SystemExit("Versao Inno Setup inesperada")
-          setup.write_text(raw.replace("1.4.0", "1.5.0"), encoding="utf-8")
-          bat = Path("GERAR_INSTALADOR_WINDOWS.bat")
-          bat.write_text(bat.read_text(encoding="utf-8").replace("1.4.0","1.5.0"), encoding="utf-8")
-          readme = Path("README.md")
-          doc = readme.read_text(encoding="utf-8").replace("1.4.0","1.5.0")
-          doc += """
-          ## Interface moderna 1.5
-          Atendimento unico em cinco etapas: cliente, veiculo, orcamento, itens e revisao.
-          Menu lateral, resumo dinamico, rolagem em monitores menores e dados locais preservados.
-          """
-          readme.write_text(doc, encoding="utf-8")
-          print("Integracao UI 1.5 e versao do instalador OK")
-          '@ | python -
-      - name: Validar codigo e ambiente
-        shell: pwsh
-        run: |
-          python -m py_compile app.py base_app.py office_flow.py ui_v14.py ui_v15.py test_flow.py test_integrated.py test_ui_v15.py
+          python -m py_compile app.py base_app.py office_flow.py ui_v14.py ui_v15.py ui_v16.py
+          python -m py_compile test_flow.py test_integrated.py test_ui_v16.py test_flow_v16.py
           python -m pip install --upgrade pip
           python -m pip install pyinstaller==6.16.0 reportlab==4.4.9
-      - name: Testar fluxo de orcamentos e recebimentos
+
+      - name: Testar cadastro, orcamento, caixa e checklist
         shell: pwsh
         run: |
           python test_flow.py
-          if ($LASTEXITCODE -ne 0) { throw 'Testes do fluxo de oficina falharam.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Teste inicial falhou' }
           python test_integrated.py
-          if ($LASTEXITCODE -ne 0) { throw 'Testes integrados falharam.' }
-          python test_ui_v15.py
-          if ($LASTEXITCODE -ne 0) { throw 'Testes da interface moderna falharam.' }
-      - name: Criar executavel do aplicativo
+          if ($LASTEXITCODE -ne 0) { throw 'Teste integrado falhou' }
+          python test_ui_v16.py
+          if ($LASTEXITCODE -ne 0) { throw 'Teste visual falhou' }
+          python test_flow_v16.py
+          if ($LASTEXITCODE -ne 0) { throw 'Teste de persistencia falhou' }
+
+      - name: Compilar aplicativo Windows sem Python no computador do cliente
         shell: pwsh
         run: |
           pyinstaller --noconfirm --clean --windowed --onedir --name PDVWordMecanica app.py
-          if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar o aplicativo.' }
-          if (-not (Test-Path 'dist/PDVWordMecanica/PDVWordMecanica.exe')) { throw 'Executavel nao foi gerado.' }
-      - name: Instalar Inno Setup se necessario
+          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller falhou' }
+          if (-not (Test-Path 'dist/PDVWordMecanica/PDVWordMecanica.exe')) { throw 'Executavel nao encontrado' }
+
+      - name: Preparar Inno Setup
         shell: pwsh
         run: |
           $iscc = @(
@@ -110,49 +65,40 @@ jobs:
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $iscc) {
             choco install innosetup --yes --no-progress
-            if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar Inno Setup.' }
+            if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar Inno Setup' }
           }
-      - name: Gerar instalador Windows
+
+      - name: Gerar instalador 1.6.0
         shell: pwsh
         run: |
           $iscc = @(
             'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
             'C:\Program Files\Inno Setup 6\ISCC.exe'
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $iscc) { throw 'ISCC.exe nao encontrado.' }
+          if (-not $iscc) { throw 'ISCC.exe nao encontrado' }
           & $iscc PDVWordMecanica.iss
-          if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar instalador.' }
-          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.5.0.exe')) { throw 'Setup.exe nao foi gerado.' }
-      - name: Publicar fonte legivel no repositorio
-        shell: pwsh
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- app.py base_app.py office_flow.py ui_v14.py ui_v15.py test_flow.py test_integrated.py test_ui_v15.py README.md PDVWordMecanica.iss INICIAR_WINDOWS.bat GERAR_INSTALADOR_WINDOWS.bat
-          $status = git status --porcelain
-          if ($status) {
-            git commit -m "Publica codigo-fonte da versao de avaliacao 1.5"
-            git push origin HEAD:main
-            if ($LASTEXITCODE -ne 0) { Write-Warning 'Nao foi possivel publicar os arquivos de fonte legiveis.' }
-          }
-      - name: Anexar instalador ao Actions
+          if ($LASTEXITCODE -ne 0) { throw 'Compilacao do Setup falhou' }
+          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.6.0.exe')) { throw 'Setup nao foi gerado' }
+
+      - name: Disponibilizar artefato no Actions
         uses: actions/upload-artifact@v4
         with:
-          name: PDVWord-Mecanica-Setup-1.5.0
-          path: instalador/PDVWord_Mecanica_Setup_1.5.0.exe
+          name: PDVWord-Mecanica-Setup-1.6.0
+          path: instalador/PDVWord_Mecanica_Setup_1.6.0.exe
           retention-days: 30
           if-no-files-found: error
-      - name: Publicar release de avaliacao
+
+      - name: Publicar instalador em Releases
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $asset = 'instalador/PDVWord_Mecanica_Setup_1.5.0.exe'
-          $tag = 'v1.5.0-avaliacao'
+          $asset = 'instalador/PDVWord_Mecanica_Setup_1.6.0.exe'
+          $tag = 'v1.6.0-avaliacao'
           gh release view $tag 2>$null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $asset --clobber
           } else {
-            gh release create $tag $asset --title 'PDV Word Mecanica 1.5.0 - avaliacao' --notes 'Instalador Windows de avaliacao. NAO HOMOLOGADO PARA USO COMERCIAL: sem emissao fiscal ou TEF. Ctrl+A abre relatorios protegidos; PDF de pagamento NAO fiscal; fazer backup e testar instalacao. Testar antes de usar com clientes.' --prerelease
+            gh release create $tag $asset --title 'PDV Word Mecânica 1.6.0 - Atendimento conectado' --notes 'Aprimora seleção e edição do cliente e veículo, orçamento integrado, caixa visual e checklist com foto vinculado ao veículo mesmo sem OS. Versão de avaliação, sem emissão fiscal, sem TEF. Faça backup antes de instalar.' --prerelease
           }
-          if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar release.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Nao foi possivel publicar o instalador' }
