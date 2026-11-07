@@ -1,45 +1,28 @@
-# PDV Word Mecânica 1.6.0 — Atendimento integrado (versão de avaliação)
+# PDV Word Mecânica 1.7 — Avaliação
 
-Sistema desktop Windows 10/11 para oficinas de automóveis e motos, separado do PDV Word de mercados. Banco SQLite local em `%LOCALAPPDATA%\PDVWordMecanica\mecanica.db` (não é apagado na atualização).
+Sistema **independente do PDV Word Mercado**, para oficinas de carros e motos, desktop Windows e banco SQLite local.
 
-## Fluxo unificado
+## Atendimento unificado
+1. Busque ou cadastre o cliente, uma única vez, com CPF/CNPJ, contato e endereço.
+2. Selecione o veículo; caso só exista um vinculado, o programa o carrega automaticamente.
+3. Descreva problema e mecânico, adicione peças do estoque **ou peças a comprar sem cadastro em estoque**, serviços e mão de obra.
+4. Salve orçamento: **aguardando**. Se aprovado, cria uma OS e desconta apenas as peças efetivamente vinculadas ao estoque. Aprovação **não** significa pagamento.
+5. Checklist com foto vinculada à mesma OS. É exigida foto para marcar OS como concluída.
+6. Ao concluir, ofereça produtos extras do estoque, com venda vinculada ao mesmo cliente e à OS, ou receba o serviço no caixa.
+7. Emita PDF de orçamento com logo e dados da loja e relatório final de serviço com fotos, pagamento registrado e produtos extras.
 
-**Atendimento:** numa única aba, selecionar ou salvar cliente, selecionar ou cadastrar veículo, descrever orçamento, adicionar peças/serviços com quantidades e preços (inclusive antes de salvar o orçamento), aprovar/rejeitar e gerar/imprimir PDF. Depois da aprovação, alterações de peças e valores exigem novo orçamento para manter o histórico fiel. A OS é vinculada automaticamente e baixa as peças do estoque apenas uma vez.
+## Configuração inicial
+- Pressione **Ctrl+A**, crie uma senha de pelo menos 8 caracteres e abra os relatórios.
+- Em **Dados da oficina (PDFs)**, informe nome fantasia, razão social, CNPJ/CPF, endereço, cidade, WhatsApp, e-mail e logo JPG/PNG. Se estiver em branco, o cadastro é sugerido na primeira entrada protegida.
+- A logo e os dados aparecerão nos novos PDFs de orçamento, vendas e relatório final.
 
-**Estoque**, **Mecânicos**, **Ordens de serviço**, **Agenda** e **Checklist** continuam separados. A antiga aba "Itens orçamento" foi removida — os itens agora ficam dentro do Atendimento.
+## Banco e backups
+Dados: `%LOCALAPPDATA%\PDVWordMecanica\mecanica.db`. Fotos: `%LOCALAPPDATA%\PDVWordMecanica\fotos`. Logo: `%LOCALAPPDATA%\PDVWordMecanica\marca`. Antes de atualizar, faça **cópia da pasta inteira** com o aplicativo fechado.
 
-**Caixa:** dentro da mesma aba há dois fluxos separados: venda de múltiplos produtos por nome ou código, com cliente cadastrado ou avulso; e serviço por nome do cliente, placa ou OS, carregando os itens do orçamento e valor devido. O operador pode editar/remover quantidades do carrinho antes da venda. OS aprovada não pode ter valores alterados sem novo orçamento; OS sem pagamentos pode ser cancelada, com devolução de peças ao estoque. Despesas avulsas têm uma área própria. Comprovantes de pagamento e venda são PDFs **NÃO FISCAIS** gerados no próprio computador.
+## Desenvolvimento e compilação
+- Executar código: `python app.py` (Python 3.12, reportlab e pillow)
+- Testar: `python test_workflow_v17.py`
+- Compilar instalador: GitHub Actions `Gerar instalador Windows`. A versão usa PyInstaller onedir, sem UPX, e Inno Setup. Análise pontual do Defender no Windows runner é executada antes da publicação.
 
-**Relatórios Ctrl+A:** senha criada no primeiro acesso (PBKDF2/SHA-256) protege vendas e recebimentos por dia, semana, mês, ano ou período. Os valores de orçamentos aprovados ficam em **a receber** até que haja efetivo pagamento. Configuração do estabelecimento (nome, CPF/CNPJ, endereço, cidade, telefone) pode ser feita dentro dos relatórios protegidos, em "Dados da oficina (PDFs)". A ficha de orçamento e os comprovantes exibem identificação, data, cliente/veículo e mecânico quando disponível.
-
-## Instalador Windows
-
-O GitHub Actions compila a versão para Windows e publica em Releases como `PDVWord_Mecanica_Setup_1.6.0.exe`. O cliente não precisa de Python. A instalação usa a mesma identidade de aplicativo das versões anteriores e mantém os dados em `%LOCALAPPDATA%` fora da pasta de instalação.
-
-Se gerar no próprio PC, use `GERAR_INSTALADOR_WINDOWS.bat` com Python 3.12, PyInstaller e Inno Setup 6.
-
-## Avisos importantes
-
-- **Não há emissão real de NF-e, NFC-e ou NFS-e, TEF ou conexão com adquirente.** O comprovante **não substitui nota fiscal**. Integração fiscal só pode ser anunciada após implementação, configuração e validação legal da oficina.
-- A versão 1.6 é **candidata a testes**, não foi homologada em equipamento real da oficina; faça testes antes de uso comercial e consulte o contador.
-- Dados de clientes ficam **apenas no computador local** e não são enviados ao GitHub. Faça backup do banco SQLite e da pasta `fotos`, e teste a recuperação antes de operar.
-- Ao executar `Ctrl+A`, evite compartilhar a senha de acesso gerencial. O restante das operações não tem autenticação por perfil nesta versão.
-
-## Dependências de desenvolvimento
-
-Python 3.12 (stdlib `tkinter`, `sqlite3`) e ReportLab 4.4.9 para PDFs. PyInstaller 6.16 + Inno Setup 6 para gerar instalador.
-
-## Interface moderna 1.5
-Atendimento unico em cinco etapas: cliente, veiculo, orcamento, itens e revisao.
-Menu lateral, resumo dinamico, rolagem em monitores menores e dados locais preservados.
-
-## Fluxo aperfeiçoado 1.6
-
-- Na **Central de Atendimento**, selecione um cliente existente pelo nome para carregar nome, CPF/CNPJ, nascimento, WhatsApp, e-mail e endereço. Para novos clientes, preencha e clique em **Salvar e selecionar cliente**.
-- Selecionar cliente filtra os **veículos daquele cliente**; selecionar veículo carrega seus dados. Salvar cadastro existente atualiza a mesma ficha (não cria duplicado).
-- Complete defeito, mecânico, peças, mão de obra e desconto; confira a **Revisão final** antes de salvar o orçamento. Aprovação e rejeição são ações distintas; apenas aprovação gera uma OS.
-- **Checklist**: selecione cliente e veículo, podendo vincular uma OS, caso já exista. As fotos são copiadas para a pasta local `%LOCALAPPDATA%\\PDVWordMecanica\\fotos` e registradas na tabela `vistorias_atendimento`.
-- O **Caixa** ganhou um cabeçalho mais visível. Pagamentos, descontos e relatórios mantêm as regras já testadas.
-- A criação de checklists sem OS não altera os registros legados da tabela `checklists`; ambas as fontes aparecem no histórico.
-
-**Importante:** comprovante PDF **não é nota fiscal**. Nada nesta versão transmite NF-e, NFC-e ou NFS-e.
+## Limitações de segurança e fiscal
+Esta é uma **versão de avaliação** que ainda precisa de testes reais de instalação, fluxo de pagamento, migração e segurança antes de clientes comerciais. O programa **não emite NF-e, NFC-e ou NFS-e**, não faz TEF, não possui certificado de assinatura digital para o instalador. PDFs são **não fiscais**. Uma análise pontual sem detecção no CI **não garante** que o Windows do cliente não sinalize malware. Não desative o antivírus nem force instalação se houver detecção.
