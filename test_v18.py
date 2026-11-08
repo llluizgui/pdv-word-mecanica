@@ -102,5 +102,51 @@ except ValueError:pass
 win.sale_customer.set(next(k for k,v in win.sale_customer_map.items() if v==cid2))
 win._checkout_client_selected()
 assert win.cash_orders_box.winfo_manager()==''
+
+# Troco 1.8.1: somente dinheiro, sem inflar receita nem duplicar baixa.
+with connect() as con:
+    before=con.execute('SELECT count(*) FROM fechamentos_v18').fetchone()[0]
+try:
+    with connect() as con:
+        checkout(con,cid2,None,[item],0,'Dinheiro',cash_received=14000)
+    raise AssertionError('Dinheiro insuficiente nao pode finalizar venda')
+except ValueError:
+    pass
+with connect() as con:
+    assert con.execute('SELECT count(*) FROM fechamentos_v18').fetchone()[0]==before
+try:
+    with connect() as con:
+        checkout(con,cid2,None,[item],0,'Pix',cash_received=20000)
+    raise AssertionError('Nao pode informar troco para Pix')
+except ValueError:
+    pass
+with connect() as con:
+    cash=checkout(con,cid2,None,[item],0,'Dinheiro',cash_received=20000)
+    assert cash['total']==15000
+    assert cash['cash_received']==20000 and cash['change']==5000
+    assert con.execute('SELECT total,valor_entregue,troco FROM fechamentos_v18 WHERE id=?',
+                       (cash['id'],)).fetchone()==(15000,20000,5000)
+    assert con.execute('SELECT total FROM vendas_balcao WHERE id=?',
+                       (cash['sale_id'],)).fetchone()[0]==15000, 'Troco nao e faturamento'
+    assert con.execute('SELECT quantidade FROM pecas WHERE id=?',(extra,)).fetchone()[0]==7
+    cashdoc=checkout_document(con,cash['id'])
+    assert cashdoc['cash_received']==20000 and cashdoc['change']==5000
+cashpdf=compact_receipt_pdf(DB.parent/'teste_recibo_com_troco.pdf',shop,cashdoc)
+cashtext=PdfReader(str(cashpdf)).pages[0].extract_text()
+assert 'Troco devolvido' in cashtext and '50,00' in cashtext
+assert 'Dinheiro entregue' in cashtext and '200,00' in cashtext
+
+# Interface so mostra campo de troco para Dinheiro.
+win.sale_payment.set('Dinheiro')
+win.cart=[item.copy()]
+win.cash_received.set('200')
+win._checkout_summary();win.update_idletasks()
+assert win.cash_change_frame.winfo_manager()=='pack'
+assert '50,00' in win.cash_change_label.cget('text'),win.cash_change_label.cget('text')
+win.cash_received.set('100')
+assert 'Faltam' in win.cash_change_label.cget('text')
+win.sale_payment.set('Pix');win._update_cash_change()
+assert win.cash_change_frame.winfo_manager()==''
+
 win.destroy()
-print('PASSOU: 1.8 OS aprovada sem pagamento, estoque sem duplicar, venda integrada, A5, PDF A4 com logo, cliente/OS na UI')
+print('PASSOU: 1.8.1 troco calculado, recebido/troco no recibo A5, OS aprovada sem pagamento, estoque sem duplicar, venda integrada, A5, PDF A4 com logo, cliente/OS na UI')
