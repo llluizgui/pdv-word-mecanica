@@ -32,6 +32,12 @@ def migrate_checkout(con):
         observacoes TEXT NOT NULL DEFAULT ''
     )''')
     con.execute('CREATE INDEX IF NOT EXISTS ix_fechamentos_cliente ON fechamentos_v18(cliente_id,data)')
+    # Migracao incremental: preserva vendas e pagamentos ja existentes na versao 1.8.
+    columns={row[1] for row in con.execute('PRAGMA table_info(fechamentos_v18)')}
+    if 'valor_entregue' not in columns:
+        con.execute('ALTER TABLE fechamentos_v18 ADD COLUMN valor_entregue INTEGER NOT NULL DEFAULT 0')
+    if 'troco' not in columns:
+        con.execute('ALTER TABLE fechamentos_v18 ADD COLUMN troco INTEGER NOT NULL DEFAULT 0')
 
 
 def customer_orders(con, cid):
@@ -44,7 +50,7 @@ def customer_orders(con, cid):
            ORDER BY CASE WHEN o.status='Concluída' THEN 0 ELSE 1 END, o.id DESC''',(cid,)).fetchall()
 
 
-def checkout(con, cid, osid, cart, discount, method, notes=''):
+def checkout(con, cid, osid, cart, discount, method, notes='', cash_received=None):
     """Uma transacao para OS pendente + produtos extras, com uma unica baixa por extra.
 
     A baixa das pecas do orcamento e' feita UMA vez em decide_quote(), nao aqui.
@@ -85,6 +91,19 @@ def checkout(con, cid, osid, cart, discount, method, notes=''):
     if cart and extra_total<=0:raise ValueError('A venda extra deve ter valor maior que zero.')
     total=due+extra_total
     if total<=0:raise ValueError('Não existe saldo de serviço nem produto extra para receber.')
+    is_cash=method.strip().casefold()=='dinheiro'
+    if is_cash:
+        # O caixa sempre envia o valor realmente entregue; chamadas legadas sem
+        # informacao continuam equivalentes a pagamento exato.
+        delivered=total if cash_received is None else cash_received
+        if not isinstance(delivered,int) or isinstance(delivered,bool) or delivered<total:
+            raise ValueError('O valor entregue em dinheiro não pode ser menor que o total.')
+        change=delivered-total
+    else:
+        if cash_received not in (None,0):
+            raise ValueError('Troco so pode ser informado para pagamento em dinheiro.')
+        delivered=0
+        change=0
     day=dt.date.today().isoformat();stamp=dt.datetime.now().isoformat(timespec='seconds')
     pid=None
     if due>0:
@@ -103,9 +122,10 @@ def checkout(con, cid, osid, cart, discount, method, notes=''):
         if osid is not None:
             con.execute('INSERT INTO os_produtos_extras(ordem_id,venda_id) VALUES(?,?)',(osid,sale))
     fid=con.execute('''INSERT INTO fechamentos_v18
-       (cliente_id,ordem_id,pagamento_id,venda_id,data,metodo,total,observacoes)
-       VALUES(?,?,?,?,?,?,?,?)''',(cid,osid,pid,sale,stamp,method,total,notes.strip())).lastrowid
-    return {'id':fid,'total':total,'service':due,'products':extra_total,'payment_id':pid,'sale_id':sale}
+       (cliente_id,ordem_id,pagamento_id,venda_id,data,metodo,total,observacoes,valor_entregue,troco)
+       VALUES(?,?,?,?,?,?,?,?,?,?)''',(cid,osid,pid,sale,stamp,method,total,notes.strip(),delivered,change)).lastrowid
+    return {'id':fid,'total':total,'service':due,'products':extra_total,'payment_id':pid,'sale_id':sale,
+            'cash_received':delivered,'change':change}
 
 
 def checkout_document(con, fid):
@@ -122,7 +142,9 @@ def checkout_document(con, fid):
         order=con.execute('''SELECT o.orcamento_id,coalesce(v.tipo,''),coalesce(v.marca,''),
                             coalesce(v.modelo,''),coalesce(v.placa,'')
                 FROM ordens o JOIN veiculos v ON v.id=o.veiculo_id WHERE o.id=?''',(row[4],)).fetchone()
-    return {'row':row,'service':service,'extras':sale,'items':items,'order':order}
+    extra=con.execute('SELECT valor_entregue,troco FROM fechamentos_v18 WHERE id=?',(fid,)).fetchone()
+    return {'row':row,'service':service,'extras':sale,'items':items,'order':order,
+            'cash_received':extra[0],'change':extra[1]}
 
 
 def _plain_styles():
@@ -238,8 +260,11 @@ def compact_receipt_pdf(target,profile,receipt):
         for name,qty,unit in receipt['items']:
             story.append(_p(f'  {name}  × {qty:g}  —  {brl(round(qty*unit))}',styles['Small']))
     story.extend([HRFlowable(width='100%',thickness=.6,color=colors.HexColor('#A9B0B7'),spaceBefore=6,spaceAfter=5),
-                  _p('TOTAL RECEBIDO: '+brl(row[3]),styles['ReceiptTotal']),
-                  _p('Pagamento registrado. Este recibo não substitui nota fiscal quando exigível.',styles['Small']),
+                  _p('TOTAL DA VENDA / SERVIÇO: '+brl(row[3]),styles['ReceiptTotal'])])
+    if row[2].strip().casefold()=='dinheiro' and receipt.get('cash_received'):
+        story.append(_p('Dinheiro entregue: '+brl(receipt['cash_received']),styles['Text9']))
+        story.append(_p('Troco devolvido: '+brl(receipt.get('change',0)),styles['Text9']))
+    story.extend([_p('Pagamento registrado. Este recibo não substitui nota fiscal quando exigível.',styles['Small']),
                   Spacer(1,13*mm),
                   HRFlowable(width='100%',thickness=.35,color=colors.HexColor('#A9B0B7')),
                   _p('Assinatura/carimbo da oficina (opcional)',styles['Small']),Spacer(1,5*mm),
@@ -257,7 +282,7 @@ class SimplifiedCheckoutV18:
         self._cash_active_order=None
         super().__init__()
         with connect() as con:migrate_checkout(con)
-        self.title('PDV Word Mecânica 1.8 | Atendimento + Vendas')
+        self.title('PDV Word Mecânica 1.8.1 | Atendimento + Vendas')
 
     def make_finance(self):
         super().make_finance()
@@ -355,12 +380,21 @@ class SimplifiedCheckoutV18:
         self.cash_total.pack(anchor='w',pady=6)
         self.sale_payment=ttk.Combobox(total,state='readonly',values=['Dinheiro','Pix','Cartão débito','Cartão crédito','Transferência','Outro'])
         self.sale_payment.set('Pix');self.sale_payment.pack(fill='x',pady=6)
+        self.cash_received=tk.StringVar()
+        self.cash_change_frame=ttk.Frame(total)
+        ttk.Label(self.cash_change_frame,text='DINHEIRO ENTREGUE PELO CLIENTE (R$)').pack(anchor='w')
+        ttk.Entry(self.cash_change_frame,textvariable=self.cash_received,font=('Segoe UI',12)).pack(fill='x',pady=(4,5))
+        self.cash_change_label=ttk.Label(self.cash_change_frame,text='Troco: R$ 0,00',font=('Segoe UI Semibold',12))
+        self.cash_change_label.pack(anchor='w',pady=(1,5))
+        self.cash_received.trace_add('write',lambda *_:self._update_cash_change())
+        self.sale_payment.bind('<<ComboboxSelected>>',lambda event:self._update_cash_change())
         buttons=ttk.Frame(total);buttons.pack(fill='x',pady=(8,0))
         ttk.Button(buttons,text='FINALIZAR E RECEBER',style='Primary.TButton',
                    command=lambda:self.alert(self.finish_sale)).pack(side='left',padx=(0,8))
         ttk.Button(buttons,text='Imprimir último recibo',command=lambda:self.alert(self.print_last_sale)).pack(side='left',padx=(0,8))
         ttk.Button(buttons,text='Nova venda',command=self._new_checkout).pack(side='left')
         self._checkout_summary()
+        self._update_cash_change()
 
     def _checkout_confirm_client(self,event=None):
         entered=self.sale_customer.get().strip().casefold()
@@ -424,6 +458,35 @@ class SimplifiedCheckoutV18:
         try:disc=money_to_cents(self.sale_fields['desconto'].get())
         except (ValueError,KeyError):disc=0
         self.cash_total.configure(text=f'TOTAL A RECEBER: {brl(max(0,due+extra-disc))}  |  Serviço: {brl(due)}  |  Extras: {brl(max(0,extra-disc))}')
+        self._update_cash_change()
+
+    def _update_cash_change(self):
+        if not hasattr(self,'cash_change_frame'):return
+        if self.sale_payment.get().strip().casefold()!='dinheiro':
+            self.cash_change_frame.pack_forget()
+            return
+        self.cash_change_frame.pack(fill='x',after=self.sale_payment,pady=(2,6))
+        try:
+            osid=getattr(self,'_cash_active_order',None)
+            due=0
+            if osid:
+                with connect() as con:due=order_documents(con,osid)['due']
+            extra=sum(round(x['qty']*x['unit']) for x in self.cart)
+            discount=money_to_cents(self.sale_fields['desconto'].get())
+            total=due+extra-discount
+            entered=self.cash_received.get().strip()
+            if not entered:
+                self.cash_change_label.configure(text='Informe quanto o cliente entregou.',foreground='#526577')
+            else:
+                delivered=money_to_cents(entered)
+                if total<=0:
+                    self.cash_change_label.configure(text='Adicione serviço ou produto para calcular o troco.',foreground='#526577')
+                elif delivered<total:
+                    self.cash_change_label.configure(text=f'Faltam {brl(total-delivered)}',foreground='#B91C1C')
+                else:
+                    self.cash_change_label.configure(text=f'TROCO A DEVOLVER: {brl(delivered-total)}',foreground='#166534')
+        except (ValueError,KeyError):
+            self.cash_change_label.configure(text='Confira o valor recebido e o desconto.',foreground='#B91C1C')
 
     def refresh_cart(self):
         super().refresh_cart()
@@ -489,21 +552,37 @@ class SimplifiedCheckoutV18:
         extra=sum(round(x['qty']*x['unit']) for x in self.cart)-discount
         if discount>sum(round(x['qty']*x['unit']) for x in self.cart):raise ValueError('Desconto maior que produtos extras.')
         if service+extra<=0:raise ValueError('Selecione serviço com saldo ou produtos para finalizar.')
-        if not messagebox.askyesno('Confirmar fechamento',
-             f'Cliente: {self.sale_customer.get()}\nServiço: {brl(service)}\nProdutos extras: {brl(extra)}\n'
-             f'TOTAL A RECEBER: {brl(service+extra)} via {method}\n\nConfirmar pagamento?'):
+        delivered=None
+        change=0
+        if method.strip().casefold()=='dinheiro':
+            if not self.cash_received.get().strip():
+                raise ValueError('Informe quanto o cliente entregou em dinheiro.')
+            delivered=money_to_cents(self.cash_received.get())
+            if delivered<service+extra:
+                raise ValueError(f'Dinheiro insuficiente. Faltam {brl(service+extra-delivered)}.')
+            change=delivered-(service+extra)
+        message=(f'Cliente: {self.sale_customer.get()}\nServiço: {brl(service)}\nProdutos extras: {brl(extra)}\n'
+                 f'TOTAL A RECEBER: {brl(service+extra)} via {method}')
+        if delivered is not None:
+            message+=f'\nValor entregue: {brl(delivered)}\nTROCO: {brl(change)}'
+        if not messagebox.askyesno('Confirmar fechamento',message+'\n\nConfirmar pagamento?'):
             return
         with connect() as con:
-            result=checkout(con,customer_id,osid,list(self.cart),discount,method,self.sale_fields['obs'].get())
+            result=checkout(con,customer_id,osid,list(self.cart),discount,method,self.sale_fields['obs'].get(),
+                            cash_received=delivered)
         self.last_checkout_id=result['id']
         self.last_sale_id=result['sale_id'];self.last_payment_id=result['payment_id']
         self.cart.clear();self.sale_fields['desconto'].set('0');self.sale_fields['obs'].set('')
+        self.cash_received.set('')
         self._pending_extra_os=None
         self.refresh_extended();self.refresh_retail()
         self._checkout_client_selected()
         try:
             dest=self.make_checkout_receipt(result['id'])
-            messagebox.showinfo('Venda finalizada',f'Fechamento #{result["id"]:06d} salvo. Total {brl(result["total"])}.\nRecibo não fiscal: {dest}')
+            messagebox.showinfo('Venda finalizada',
+                f'Fechamento #{result["id"]:06d} salvo. Total {brl(result["total"])}.'
+                +(f'\nTroco devolvido: {brl(result["change"])}' if method.strip().casefold()=='dinheiro' else '')
+                +f'\nRecibo não fiscal: {dest}')
         except Exception as exc:
             messagebox.showwarning('Pagamento salvo',f'O recebimento foi salvo corretamente, mas o PDF não pôde ser criado: {exc}.\nNão refaça o pagamento.')
         return result
@@ -529,6 +608,7 @@ class SimplifiedCheckoutV18:
         self.sale_customer.set('');self.cart.clear();self._cash_active_order=None
         self.cash_order_option.set('');self.cash_orders_box.pack_forget()
         self.sale_fields['desconto'].set('0');self.sale_fields['obs'].set('')
+        self.cash_received.set('');self.sale_payment.set('Pix')
         self.refresh_cart();self._checkout_summary()
         self.cash_client_hint.configure(text='Nova venda: busque o cliente por nome.')
 
