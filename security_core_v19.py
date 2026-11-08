@@ -16,6 +16,7 @@ import sqlite3
 import tempfile
 import time
 import zipfile
+from contextlib import closing
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox, filedialog
@@ -241,7 +242,7 @@ def automatic_backup(data_dir=None,destination=None,retain=14,*,force=False):
     fd,tmp=tempfile.mkstemp(suffix='.db',dir=str(root));os.close(fd)
     temp_archive=target.with_suffix('.zip.tmp')
     try:
-        with sqlite3.connect(base/'mecanica.db') as source,sqlite3.connect(tmp) as dest:
+        with closing(sqlite3.connect(base/'mecanica.db')) as source, closing(sqlite3.connect(tmp)) as dest:
             source.backup(dest)
             if dest.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
                 raise ValueError('Cópia SQLite não passou na verificação.')
@@ -418,7 +419,7 @@ def restore_archive(filename,data_dir=None,backup_destination=None,confirm=None)
                 db=stage/'mecanica.db'
         else:
             db=src
-        with sqlite3.connect(db) as source:
+        with closing(sqlite3.connect(db)) as source:
             if source.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
                 raise ValueError('Banco de backup inválido.')
             tables={x[0] for x in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -428,7 +429,7 @@ def restore_archive(filename,data_dir=None,backup_destination=None,confirm=None)
             return False
         automatic_backup(base,backup_destination,force=True)
         # Banco online: usa API SQLite de backup para não copiar um .db parcialmente aberto.
-        with sqlite3.connect(db) as source,sqlite3.connect(base/'mecanica.db') as dest:
+        with closing(sqlite3.connect(db)) as source, closing(sqlite3.connect(base/'mecanica.db')) as dest:
             source.backup(dest)
         for rel in asset_names:
             source=stage/rel
