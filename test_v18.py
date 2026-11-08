@@ -88,6 +88,14 @@ assert 'FICHA TÉCNICA' in PdfReader(str(tech)).pages[0].extract_text()
 assert 'RECIBO DE PAGAMENTO' in PdfReader(str(rec)).pages[0].extract_text()
 
 # GUI: selecao de cliente mostra OS mas nenhuma segunda aba de servicos.
+# Sessao ficticia apenas dentro da suite de testes: o aplicativo nao inclui login de teste.
+from workflow_v19 import SecureWorkshopV19
+def _login_test_v18(self):
+    self._operator={'id':1,'nome':'Teste automatizado','cargo':'Administrador','permissoes':[]}
+    self._auth_ready=True
+    self.deiconify()
+    self._update_access()
+SecureWorkshopV19._startup_identity=_login_test_v18
 win=App();win.withdraw();win.update_idletasks()
 assert win.cash_notebook.tab(win.cash_service_tab,'state')=='hidden'
 assert win.cash_notebook.tab(win.cash_products_tab,'text')=='VENDAS'
