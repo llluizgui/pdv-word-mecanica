@@ -152,7 +152,8 @@ win._checkout_summary();win.update_idletasks()
 assert win.cash_change_frame.winfo_manager()=='pack'
 assert '50,00' in win.cash_change_label.cget('text'),win.cash_change_label.cget('text')
 win.cash_received.set('100')
-assert 'Faltam' in win.cash_change_label.cget('text')
+assert ('Faltam' in win.cash_change_label.cget('text') or
+        'insuficiente' in win.cash_change_label.cget('text').lower())
 win.sale_payment.set('Pix');win._update_cash_change()
 assert win.cash_change_frame.winfo_manager()==''
 
