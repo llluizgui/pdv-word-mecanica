@@ -8,6 +8,9 @@ on:
       - PDVWordMecanica.iss
       - workflow_v18.py
       - test_v18.py
+      - security_core_v19.py
+      - workflow_v19.py
+      - test_v19.py
       - 'release_18/**'
       - .github/workflows/instalador-windows.yml
   workflow_dispatch:
@@ -17,7 +20,7 @@ permissions:
 
 jobs:
   compilar:
-    name: Verificar, testar e gerar Setup Windows 1.8.1
+    name: Verificar, testar e gerar Setup Windows 1.9.0
     runs-on: windows-2022
     steps:
       - name: Obter codigo do repositorio
@@ -34,16 +37,18 @@ jobs:
         run: |
           python -m pip install pyinstaller==6.16.0 reportlab==4.4.9 pypdf==5.9.0 pillow
           if ($LASTEXITCODE -ne 0) { throw 'Dependencias nao instaladas.' }
-          python -m py_compile app.py base_app.py office_flow.py ui_v14.py ui_v15.py ui_v16.py workflow_v17.py workflow_v18.py test_flow.py test_v18.py
+          python -m py_compile app.py base_app.py office_flow.py ui_v14.py ui_v15.py ui_v16.py workflow_v17.py workflow_v18.py security_core_v19.py workflow_v19.py test_flow.py test_v18.py test_v19.py
           if ($LASTEXITCODE -ne 0) { throw 'Erro de sintaxe.' }
 
-      - name: Testar atendimento, troco, recibo A5, estoque e vendas
+      - name: Testar permissoes, caixa por turno, parcial, estoque, backup e assinatura
         shell: pwsh
         run: |
           python test_flow.py
           if ($LASTEXITCODE -ne 0) { throw 'Teste de fluxo basico falhou.' }
           python test_v18.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste integrado 1.8 falhou. Nao publicar.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Regressao 1.8 falhou. Nao publicar.' }
+          python test_v19.py
+          if ($LASTEXITCODE -ne 0) { throw 'Teste 1.9 de autenticação, caixa e backup falhou. Nao publicar.' }
 
       - name: Compilar aplicativo offline com PyInstaller
         shell: pwsh
@@ -61,14 +66,14 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Inno Setup indisponivel.' }
           }
 
-      - name: Gerar instalador 1.8.1
+      - name: Gerar instalador 1.9.0
         shell: pwsh
         run: |
           $iscc = @('C:\Program Files (x86)\Inno Setup 6\ISCC.exe','C:\Program Files\Inno Setup 6\ISCC.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $iscc) { throw 'ISCC.exe nao encontrado.' }
           & $iscc PDVWordMecanica.iss
           if ($LASTEXITCODE -ne 0) { throw 'Geracao do Setup falhou.' }
-          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.8.1.exe')) { throw 'Setup 1.8.1 nao foi gerado.' }
+          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.9.0.exe')) { throw 'Setup 1.9.0 nao foi gerado.' }
 
       - name: Verificar instalador e EXE com Microsoft Defender
         shell: pwsh
@@ -78,7 +83,7 @@ jobs:
           Write-Host "Assinaturas Defender: $($st.AntivirusSignatureVersion)"
           Write-Host "Protecao em tempo real no runner: $($st.RealTimeProtectionEnabled)"
           try { Update-MpSignature -ErrorAction Stop } catch { Write-Warning "Atualizacao das assinaturas nao concluida: $_" }
-          $targets = @('dist/PDVWordMecanica/PDVWordMecanica.exe','instalador/PDVWord_Mecanica_Setup_1.8.1.exe')
+          $targets = @('dist/PDVWordMecanica/PDVWordMecanica.exe','instalador/PDVWord_Mecanica_Setup_1.9.0.exe')
           foreach ($file in $targets) {
             $full = (Resolve-Path $file -ErrorAction Stop).Path
             Start-MpScan -ScanType CustomScan -ScanPath $full -ErrorAction Stop
@@ -88,16 +93,16 @@ jobs:
             if ($matches.Count -gt 0 -or -not (Test-Path $full)) { throw "Arquivo bloqueado pelo Defender: $file. Publicacao suspensa." }
             Write-Host "Varredura pontual sem deteccao no runner: $file"
           }
-          $hash = (Get-FileHash 'instalador/PDVWord_Mecanica_Setup_1.8.1.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash *PDVWord_Mecanica_Setup_1.8.1.exe" | Set-Content 'instalador/SHA256SUMS.txt' -Encoding ascii
+          $hash = (Get-FileHash 'instalador/PDVWord_Mecanica_Setup_1.9.0.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *PDVWord_Mecanica_Setup_1.9.0.exe" | Set-Content 'instalador/SHA256SUMS.txt' -Encoding ascii
           Write-Host "SHA256 do setup: $hash"
 
       - name: Guardar instalador como artefato
         uses: actions/upload-artifact@v4
         with:
-          name: PDVWord-Mecanica-Setup-1.8.1
+          name: PDVWord-Mecanica-Setup-1.9.0
           path: |
-            instalador/PDVWord_Mecanica_Setup_1.8.1.exe
+            instalador/PDVWord_Mecanica_Setup_1.9.0.exe
             instalador/SHA256SUMS.txt
           retention-days: 30
           if-no-files-found: error
@@ -107,12 +112,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $asset = 'instalador/PDVWord_Mecanica_Setup_1.8.1.exe'
-          $tag = 'v1.8.1-avaliacao'
+          $asset = 'instalador/PDVWord_Mecanica_Setup_1.9.0.exe'
+          $tag = 'v1.9.0-avaliacao'
           gh release view $tag 2>$null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $asset 'instalador/SHA256SUMS.txt' --clobber
           } else {
-            gh release create $tag $asset 'instalador/SHA256SUMS.txt' --title 'PDV Word Mecânica 1.8.1 - Caixa simplificado' --notes 'Versao 1.8.1: pagamento em dinheiro com campo valor entregue, troco calculado e salvo no banco e recibo A5; caixa registra apenas total da venda, sem somar troco a receita. Testes de regressao e verificacao pontual Defender no runner. Versao de avaliacao, sem emissao fiscal nem TEF. Faça backup antes de instalar.' --prerelease
+            gh release create $tag $asset 'instalador/SHA256SUMS.txt' --title 'PDV Word Mecânica 1.9.0 - Gestão e segurança' --notes 'Versao de avaliacao 1.9: usuarios com senha, permissoes, abertura/fechamento de caixa e diferenca, recebimento parcial com troco, estoque minimo, assinatura no PDF, backup automatico ZIP e restauracao autorizada. PDF nao fiscal. Sem NFC-e/TEF. Testado no runner Windows, mas a varredura do Defender nao garante seguranca no PC do cliente.' --prerelease
           }
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar release.' }
