@@ -1,0 +1,159 @@
+name: PDV Mecanica 1.8.1 - Windows assinado (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build-sign:
+    runs-on: windows-2022
+    steps:
+      - name: Exigir identidade de assinatura valida
+        shell: pwsh
+        env:
+          PDV_AS_ENDPOINT: ${{ vars.PDV_AS_ENDPOINT }}
+          PDV_AS_ACCOUNT: ${{ vars.PDV_AS_ACCOUNT }}
+          PDV_AS_PROFILE: ${{ vars.PDV_AS_PROFILE }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          foreach ($name in @('PDV_AS_ENDPOINT','PDV_AS_ACCOUNT','PDV_AS_PROFILE','AZURE_CLIENT_ID','AZURE_TENANT_ID','AZURE_SUBSCRIPTION_ID')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Falta $name. Configure o servico de assinatura confiavel antes de publicar."
+            }
+          }
+
+      - name: Checkout do codigo 1.8.1
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Dependencias e testes da versao 1.8.1
+        shell: pwsh
+        run: |
+          python -m pip install pyinstaller==6.16.0 reportlab==4.4.9 pypdf==5.9.0 pillow
+          if ($LASTEXITCODE -ne 0) { throw 'Falha nas dependencias' }
+          python -m py_compile app.py base_app.py office_flow.py ui_v14.py ui_v15.py ui_v16.py workflow_v17.py workflow_v18.py test_flow.py test_v18.py
+          if ($LASTEXITCODE -ne 0) { throw 'Sintaxe invalida' }
+          python test_flow.py
+          if ($LASTEXITCODE -ne 0) { throw 'Regressao basica falhou' }
+          python test_v18.py
+          if ($LASTEXITCODE -ne 0) { throw 'Regressao da versao 1.8.1 falhou' }
+
+      - name: Compilar o aplicativo Windows offline
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --noupx --windowed --onedir --name PDVWordMecanica app.py
+          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller falhou' }
+          if (-not (Test-Path 'dist/PDVWordMecanica/PDVWordMecanica.exe')) { throw 'Exe ausente' }
+
+      - name: Autenticacao Microsoft Azure via OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Instalar ferramentas de assinatura Microsoft
+        shell: pwsh
+        env:
+          PDV_AS_ENDPOINT: ${{ vars.PDV_AS_ENDPOINT }}
+          PDV_AS_ACCOUNT: ${{ vars.PDV_AS_ACCOUNT }}
+          PDV_AS_PROFILE: ${{ vars.PDV_AS_PROFILE }}
+        run: |
+          & ./scripts/prepare_artifact_signing.ps1
+
+      - name: Assinar executaveis e bibliotecas de codigo nativo
+        shell: pwsh
+        run: |
+          $items = @(Get-ChildItem 'dist/PDVWordMecanica' -Recurse -File | Where-Object { $_.Extension.ToLowerInvariant() -in @('.exe','.dll','.pyd') })
+          if ($items.Count -lt 1) { throw 'Nenhum executavel para assinar' }
+          foreach ($item in $items) {
+            $existing = Get-AuthenticodeSignature -LiteralPath $item.FullName
+            if ($existing.Status -eq 'Valid') {
+              Write-Host "Assinatura de fornecedor existente: $($item.Name)"
+              continue
+            }
+            & ./scripts/sign_pdvmecanica.ps1 -FilePath $item.FullName
+          }
+          $app = Get-AuthenticodeSignature -LiteralPath 'dist/PDVWordMecanica/PDVWordMecanica.exe'
+          if ($app.Status -ne 'Valid') { throw 'Aplicativo principal nao foi assinado' }
+
+      - name: Preparar Inno Setup assinado incluindo copias temporarias
+        shell: pwsh
+        run: |
+          $src = Get-Content 'PDVWordMecanica.iss' -Raw
+          if (-not $src.Contains('[Setup]') -or -not $src.Contains('OutputBaseFilename=PDVWord_Mecanica_Setup_1.8.1')) {
+            throw 'Arquivo Inno Setup inesperado. Nao publicar.'
+          }
+          $src = $src.Replace('[Setup]', "[Setup]`r`nSignTool=pdvsign`r`nSignedUninstaller=yes")
+          $src = $src.Replace('OutputBaseFilename=PDVWord_Mecanica_Setup_1.8.1', 'OutputBaseFilename=PDVWord_Mecanica_Setup_1.8.1_ASSINADO')
+          Set-Content 'PDVWordMecanica.signed.iss' -Value $src -Encoding UTF8
+
+      - name: Instalar Inno Setup 6 se necessario
+        shell: pwsh
+        run: |
+          $candidates = @('C:/Program Files (x86)/Inno Setup 6/ISCC.exe','C:/Program Files/Inno Setup 6/ISCC.exe')
+          if (-not ($candidates | Where-Object { Test-Path $_ })) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup indisponivel' }
+          }
+
+      - name: Compilar instalador e assinar Setup Uninstall e TEMP
+        shell: pwsh
+        run: |
+          $iscc = @('C:/Program Files (x86)/Inno Setup 6/ISCC.exe','C:/Program Files/Inno Setup 6/ISCC.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw 'ISCC nao localizado' }
+          $signer = Join-Path (Get-Location).Path 'scripts/sign_pdvmecanica.ps1'
+          $signCommand = 'pdvsign=powershell.exe -NoProfile -File "' + $signer + '" $f'
+          & $iscc ('/S' + $signCommand) 'PDVWordMecanica.signed.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Compilacao ou assinatura Inno Setup falhou' }
+
+      - name: Confirmar assinatura e verificar com Defender
+        shell: pwsh
+        run: |
+          $file = 'instalador/PDVWord_Mecanica_Setup_1.8.1_ASSINADO.exe'
+          if (-not (Test-Path $file)) { throw 'Instalador assinado nao foi gerado' }
+          $auth = Get-AuthenticodeSignature -LiteralPath $file
+          if ($auth.Status -ne 'Valid') { throw "Instalador sem assinatura confiavel: $($auth.Status)" }
+          & $env:PDV_SIGNTOOL verify /pa $file
+          if ($LASTEXITCODE -ne 0) { throw 'SignTool rejeitou instalador' }
+          $state = Get-MpComputerStatus -ErrorAction Stop
+          if (-not $state.AntivirusEnabled) { throw 'Defender nao esta habilitado no runner' }
+          Start-MpScan -ScanType CustomScan -ScanPath (Resolve-Path $file).Path -ErrorAction Stop
+          $hits = @(Get-MpThreatDetection -ErrorAction SilentlyContinue | Where-Object { ($_.Resources -join ';') -like '*PDVWord_Mecanica_Setup_1.8.1_ASSINADO.exe*' })
+          if ($hits.Count -gt 0 -or -not (Test-Path $file)) { throw 'Defender bloqueou o instalador. Nao publicar.' }
+          $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *PDVWord_Mecanica_Setup_1.8.1_ASSINADO.exe" | Set-Content 'instalador/SHA256SUMS_ASSINADO.txt' -Encoding ascii
+
+      - name: Armazenar somente o instalador assinado
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDVWord-Mecanica-1.8.1-ASSINADO
+          path: |
+            instalador/PDVWord_Mecanica_Setup_1.8.1_ASSINADO.exe
+            instalador/SHA256SUMS_ASSINADO.txt
+          if-no-files-found: error
+
+      - name: Publicar release separada e assinada
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = 'v1.8.1-assinada'
+          $assets = @('instalador/PDVWord_Mecanica_Setup_1.8.1_ASSINADO.exe','instalador/SHA256SUMS_ASSINADO.txt')
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @assets --clobber
+          } else {
+            gh release create $tag @assets --title 'PDV Word Mecanica 1.8.1 ASSINADA' --notes 'App e instalador assinados via Microsoft Artifact Signing. Assinatura verificada e scan pontual Defender no runner. Avaliacao, sem recursos fiscais ou TEF. Fazer backup antes de instalar.' --prerelease
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Publicacao assinada falhou' }
