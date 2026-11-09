@@ -37,3 +37,6 @@ Esta é uma **versão de avaliação** que ainda precisa de testes reais de inst
 - Estoque tem campo Localização para corredor/prateleira/caixa.
 
 **ATENÇÃO:** versão de avaliação, sem documentos fiscais. O instalador padrão continua sem assinatura digital; não desative mecanismos de segurança do Windows para instalá-lo. Salve uma cópia de `%LOCALAPPDATA%\\PDVWordMecanica` antes de atualizar.
+
+## Correção 1.9.1 — ficha completa
+O Atendimento voltou a exibir as seis seções no mesmo painel de rolagem, com atalhos para Cliente, Veículo, Orçamento, Peças e mão de obra, Finalizar e Histórico. Remove o Notebook interno que podia esconder as seções em algumas telas. Nenhum banco de dados é apagado nessa correção.

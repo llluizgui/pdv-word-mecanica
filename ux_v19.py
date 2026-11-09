@@ -52,7 +52,7 @@ class WorkspaceV19:
         self._os_all_rows = []
         self._os_current_page = 0
         super().__init__()
-        self.title('PDV Word Mecânica 1.9.0 | Siliro Tech')
+        self.title('PDV Word Mecânica 1.9.1 | Siliro Tech')
 
     def make_inventory(self):
         super().make_inventory()

@@ -140,24 +140,31 @@ class ModernExperience:
                  fg='#9EC5FF', bg=NAVY).pack(anchor='w')
         tk.Label(hero, text='Tudo em um só lugar.', font=('Segoe UI Semibold', 23),
                  fg=WHITE, bg=NAVY).pack(anchor='w', pady=(4, 5))
-        tk.Label(hero, text='Cada etapa na sua aba: atendimento rápido e sem excesso de campos.',
+        tk.Label(hero, text='Cliente  •  Veículo  •  Orçamento  •  Peças e serviços  •  Conclusão',
                  font=('Segoe UI', 10), fg='#D8E5FA', bg=NAVY).pack(anchor='w')
-        self._attendance_tabs = ttk.Notebook(tab, style='Compact.TNotebook')
-        self._attendance_tabs.pack(fill='both', expand=True, pady=(0, 7))
-        page_customer = ttk.Frame(self._attendance_tabs, padding=10)
-        page_vehicle = ttk.Frame(self._attendance_tabs, padding=10)
-        page_budget = ttk.Frame(self._attendance_tabs, padding=10)
-        page_items = ttk.Frame(self._attendance_tabs, padding=10)
-        page_review = ttk.Frame(self._attendance_tabs, padding=10)
-        page_history = ttk.Frame(self._attendance_tabs, padding=10)
-        for title, page in [('Cliente',page_customer),('Veículo',page_vehicle),
-                            ('Orçamento',page_budget),('Peças e serviços',page_items),
-                            ('Finalizar',page_review),('Histórico',page_history)]:
-            self._attendance_tabs.add(page, text=title)
-        self._attend_budget_page = page_budget
+        # O Notebook aninhado dentro do Canvas ocultava as outras etapas em algumas telas.
+        # Mantemos TODAS as etapas no mesmo conteúdo rolável e oferecemos atalhos.
+        self._attendance_content = tab
+        self._attendance_sections = {}
+        nav = ttk.LabelFrame(tab, text='Ir diretamente para uma etapa', padding=(12, 9))
+        nav.pack(fill='x', pady=(0, 12))
+        self._attendance_nav = nav
+        for col in range(3):
+            nav.columnconfigure(col, weight=1)
+        for i, (title, _label) in enumerate([
+                ('Cliente', '1. Cliente'),
+                ('Veículo', '2. Veículo / Carro'),
+                ('Orçamento', '3. Orçamento'),
+                ('Peças e serviços', '4. Peças e mão de obra'),
+                ('Finalizar', '5. Revisar e salvar'),
+                ('Histórico', '6. Histórico')]):
+            ttk.Button(nav, text=_label, style='Soft.TButton',
+                command=lambda name=title: self._jump_to_attendance(name)).grid(
+                    row=i//3, column=i%3, sticky='ew', padx=4, pady=4)
 
-        customer = self._card(page_customer, '01', 'Identificação do cliente',
+        customer = self._card(tab, '01', 'Identificação do cliente',
                               'Encontre um cadastro existente ou preencha os dados abaixo e salve sem sair do atendimento.')
+        self._attendance_sections['Cliente'] = customer
         ttk.Label(customer, text='CLIENTE CADASTRADO — BUSCA POR NOME', style='CardMuted.TLabel').pack(anchor='w')
         self.quote_customer = ttk.Combobox(customer, state='normal')
         self.quote_customer.pack(fill='x', pady=(5, 4))
@@ -174,8 +181,9 @@ class ModernExperience:
             ('+ SALVAR E SELECIONAR CLIENTE', lambda: self.alert(self.save_customer), 'Soft.TButton'),
         ])
 
-        vehicle = self._card(page_vehicle, '02', 'Veículo do cliente',
+        vehicle = self._card(tab, '02', 'Veículo do cliente',
                              'Os veículos já cadastrados aparecem após selecionar o cliente. Você também pode adicionar outro aqui.')
+        self._attendance_sections['Veículo'] = vehicle
         ttk.Label(vehicle, text='VEÍCULO VINCULADO', style='CardMuted.TLabel').pack(anchor='w')
         self.quote_vehicle = ttk.Combobox(vehicle, state='normal')
         self.quote_vehicle.pack(fill='x', pady=(5, 4))
@@ -192,8 +200,9 @@ class ModernExperience:
             ('+ SALVAR E SELECIONAR VEÍCULO', lambda: self.alert(self.save_vehicle), 'Soft.TButton'),
         ])
 
-        budget = self._card(page_budget, '03', 'Orçamento de serviço',
+        budget = self._card(tab, '03', 'Orçamento de serviço',
                             'Descreva o que será feito, selecione o mecânico e informe valores e prazo.')
+        self._attendance_sections['Orçamento'] = budget
         ttk.Label(budget, text='DEFEITO / SERVIÇO SOLICITADO *', style='CardMuted.TLabel').pack(anchor='w')
         self.description = tk.StringVar()
         ttk.Entry(budget, textvariable=self.description).pack(fill='x', pady=(5, 12))
@@ -206,8 +215,9 @@ class ModernExperience:
         ])
         self._info(budget, 'Peças e mão de obra informadas aqui SOMAM com os itens detalhados. Evite lançar o mesmo serviço duas vezes.')
 
-        items = self._card(page_items, '04', 'Peças, produtos e mão de obra',
+        items = self._card(tab, '04', 'Peças, produtos e mão de obra',
                            'Adicione peças do estoque e serviços diretamente à mesma ficha.')
+        self._attendance_sections['Peças e serviços'] = items
         self.item_quote = ttk.Combobox(items)  # Compatibilidade com refresh_extended de versoes anteriores.
         inputs = ttk.Frame(items, style='Card.TFrame')
         inputs.pack(fill='x')
@@ -238,8 +248,9 @@ class ModernExperience:
         self.item_summary = ttk.Label(items, style='CardMuted.TLabel', text='Nenhum item no orçamento.')
         self.item_summary.pack(anchor='w', pady=(6, 2))
 
-        overview = self._card(page_review, '05', 'Revisão e validação',
+        overview = self._card(tab, '05', 'Revisão e validação',
                               'Confira tudo antes de salvar. A aprovação do cliente é registrada separadamente.')
+        self._attendance_sections['Finalizar'] = overview
         review = ttk.Frame(overview, style='Card.TFrame')
         review.pack(fill='x')
         self.summary_customer = ttk.Label(review, style='Card.TLabel', text='Cliente: não selecionado')
@@ -267,8 +278,9 @@ class ModernExperience:
             ('WhatsApp', self.whatsapp, 'TButton'),
         ])
 
-        previous = self._card(page_history, '✓', 'Histórico de orçamentos',
+        previous = self._card(tab, '✓', 'Histórico de orçamentos',
                               'Para abrir um orçamento antigo, selecione uma linha; os detalhes aparecem nas etapas acima.')
+        self._attendance_sections['Histórico'] = previous
         self.quote_tree = _grid(previous, ['Nº', 'Data', 'Cliente', 'Veículo', 'Total', 'Status'],
                                 widths=[70, 95, 175, 180, 115, 155], height=7)
         self.quote_tree.bind('<<TreeviewSelect>>', self._select_previous_quote)
@@ -280,6 +292,22 @@ class ModernExperience:
             variable.bind('<FocusOut>', lambda event: self._live_summary(), add='+')
         for v in [self.description, *self.q.values()]:
             v.trace_add('write', lambda *_: self._live_summary())
+
+    def _jump_to_attendance(self, section):
+        """Acessar qualquer campo mesmo em telas pequenas, sem abas escondidas."""
+        panel = getattr(self, '_attendance_sections', {}).get(section)
+        if panel is None:
+            return
+        inside = self._attendance_content
+        canvas = inside.master
+        self.update_idletasks()
+        max_scroll = max(1, inside.winfo_height() - canvas.winfo_height())
+        canvas.yview_moveto(min(1.0, max(0.0, panel.winfo_y() / max_scroll)))
+        try:
+            self.nb.select(next(tab_id for tab_id in self.nb.tabs()
+                                if self.nb.tab(tab_id, 'text') == 'Atendimento'))
+        except (StopIteration, tk.TclError):
+            pass
 
     def _on_customer_changed(self, event=None):
         self.refresh_quote_vehicles()
@@ -303,8 +331,7 @@ class ModernExperience:
     def _select_previous_quote(self, event=None):
         super().select_quote_for_edit(event)
         self._live_summary()
-        if hasattr(self,'_attendance_tabs'):
-            self._attendance_tabs.select(self._attend_budget_page)
+        self._jump_to_attendance('Orçamento')
 
     def _live_summary(self):
         if not hasattr(self, 'summary_total'):

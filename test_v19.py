@@ -31,3 +31,24 @@ assert [r[0] for r in filter_os(rows,'Março','2026')]==[2]
 assert [r[0] for r in filter_os(rows,'Todos','2025')]==[3]
 assert [r[0] for r in filter_os(rows,'Todos','Todos','Aberta')]==[1,3]
 print('PASSOU: cálculos legados e novos, localização e filtro por mês/ano/status')
+
+# Regressão visual: todas as partes da ficha devem existir no mesmo painel rolável,
+# sem Notebook aninhado que escondia veículo/orçamento nas telas do cliente.
+from app import App
+win = App()
+win.withdraw()
+win.update_idletasks()
+assert not hasattr(win, '_attendance_tabs'), 'Nao usar abas aninhadas no atendimento'
+expected = ('Cliente','Veículo','Orçamento','Peças e serviços','Finalizar','Histórico')
+for name in expected:
+    panel = win._attendance_sections.get(name)
+    assert panel is not None, f'Etapa ausente: {name}'
+    assert panel.master == win._attendance_content, f'Etapa fora do painel principal: {name}'
+    assert panel.winfo_manager() == 'pack', f'Etapa oculta: {name}'
+assert win.quote_vehicle.winfo_exists() and win.quote_mechanic.winfo_exists()
+assert win.description is not None and win.items_tree.winfo_exists()
+assert win.summary_total.winfo_exists()
+for name in expected:
+    win._jump_to_attendance(name)
+win.destroy()
+print('PASSOU: seis etapas de atendimento visiveis e atalhos navegaveis')
