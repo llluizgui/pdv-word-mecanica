@@ -643,8 +643,15 @@ class SimplifiedCheckoutV18:
             origin='Estoque' if pid is not None else 'A comprar / manual' if typ=='Peça' else 'Serviço'
             detailed.append((f'{typ} ({origin}): {name}',f'{qty:g}',brl(unit),brl(round(qty*unit))))
         if not items:
-            item_section=[('Peças estimadas',brl(row[17])),('Mão de obra',brl(row[18]))]
-        else:item_section=detailed
+            item_section=[('Peças não detalhadas',brl(row[17])),('Mão de obra não detalhada',brl(row[18]))]
+        else:
+            mixed=bool(con.execute('SELECT calculo_misto FROM orcamentos WHERE id=?',(qid,)).fetchone()[0])
+            extras=[]
+            if mixed and row[17]:
+                extras.append(('Peças estimadas não detalhadas','—','—',brl(row[17])))
+            if mixed and row[18]:
+                extras.append(('Mão de obra não detalhada','—','—',brl(row[18])))
+            item_section=[detailed[0],*extras,*detailed[1:]]
         sections=[('Cliente',[('Nome',row[5]),('CPF/CNPJ',row[6]),('Contato',row[7]),('Endereço',row[8])]),
           ('Veículo',[('Tipo',row[9]),('Marca/Modelo',f'{row[10]} {row[11]}'),('Ano',row[12]),
                    ('Placa',row[13]),('Cor',row[14]),('Chassi',row[15])]),

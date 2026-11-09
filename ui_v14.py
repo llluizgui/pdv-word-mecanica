@@ -332,14 +332,14 @@ class UnifiedExperience:
         description=self.description.get().strip()
         if not description:raise ValueError('Informe a descrição do serviço.')
         p=money_to_cents(self.q['pecas'].get());m=money_to_cents(self.q['mao'].get());disc=money_to_cents(self.q['desconto'].get())
-        subtotal=sum(round(x['quantidade']*x['unitario']) for x in self.quote_draft) if self.quote_draft else p+m
+        subtotal=p+m+sum(round(x['quantidade']*x['unitario']) for x in self.quote_draft)
         if disc>subtotal:raise ValueError('Desconto maior que o subtotal.')
         mech=self.maps.get('staff',{}).get(self.quote_mechanic.get())
         with connect() as con:
             has_vehicle=con.execute('SELECT 1 FROM veiculos WHERE id=? AND cliente_id=?',(vid,cid)).fetchone()
             if not has_vehicle:raise ValueError('O veículo precisa pertencer ao cliente selecionado.')
-            qid=con.execute('INSERT INTO orcamentos(cliente_id,veiculo_id,data,descricao,pecas_centavos,mao_obra_centavos,desconto_centavos,validade,profissional_id) VALUES(?,?,?,?,?,?,?,?,?)',
-                    (cid,vid,dt.date.today().isoformat(),description,p,m,disc,self.q['validade'].get(),mech)).lastrowid
+            qid=con.execute('INSERT INTO orcamentos(cliente_id,veiculo_id,data,descricao,pecas_centavos,mao_obra_centavos,desconto_centavos,validade,profissional_id,calculo_misto) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                    (cid,vid,dt.date.today().isoformat(),description,p,m,disc,self.q['validade'].get(),mech,1)).lastrowid
             for x in self.quote_draft:
                 con.execute('INSERT INTO orcamento_itens(orcamento_id,tipo,peca_id,descricao,quantidade,unitario) VALUES(?,?,?,?,?,?)',
                     (qid,x['tipo'],x['peca_id'],x['descricao'],x['quantidade'],x['unitario']))

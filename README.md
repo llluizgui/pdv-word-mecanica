@@ -1,4 +1,4 @@
-# PDV Word Mecânica 1.7 — Avaliação
+# PDV Word Mecânica 1.9.0 — Avaliação
 
 Sistema **independente do PDV Word Mercado**, para oficinas de carros e motos, desktop Windows e banco SQLite local.
 
@@ -26,3 +26,14 @@ Dados: `%LOCALAPPDATA%\PDVWordMecanica\mecanica.db`. Fotos: `%LOCALAPPDATA%\PDVW
 
 ## Limitações de segurança e fiscal
 Esta é uma **versão de avaliação** que ainda precisa de testes reais de instalação, fluxo de pagamento, migração e segurança antes de clientes comerciais. O programa **não emite NF-e, NFC-e ou NFS-e**, não faz TEF, não possui certificado de assinatura digital para o instalador. PDFs são **não fiscais**. Uma análise pontual sem detecção no CI **não garante** que o Windows do cliente não sinalize malware. Não desative o antivírus nem force instalação se houver detecção.
+
+## Novidades 1.9.0
+- Atendimento agora tem abas Cliente, Veículo, Orçamento, Peças e serviços, Finalizar e Histórico.
+- Orçamentos **novos** somam valores não detalhados e itens, com desconto único; orçamentos antigos preservam a lógica original.
+- Peças sem estoque podem ser lançadas manualmente no orçamento, sem baixar o inventário.
+- Ordens de serviço filtráveis por mês, ano e status; no máximo 20 registros por página.
+- Leitor de código de barras adiciona o item com Enter e atualiza imediatamente o total destacado no topo de Vendas.
+- Após salvar o recebimento e criar o PDF, o caixa pergunta se deseja imprimir.
+- Estoque tem campo Localização para corredor/prateleira/caixa.
+
+**ATENÇÃO:** versão de avaliação, sem documentos fiscais. O instalador padrão continua sem assinatura digital; não desative mecanismos de segurança do Windows para instalá-lo. Salve uma cópia de `%LOCALAPPDATA%\\PDVWordMecanica` antes de atualizar.

@@ -38,7 +38,13 @@ def quote_value(con, qid):
     if quote is None:
         raise ValueError('Orçamento não encontrado.')
     count, amount = con.execute('SELECT count(*),sum(round(quantidade*unitario)) FROM orcamento_itens WHERE orcamento_id=?',(qid,)).fetchone()
-    subtotal = int(amount or 0) if count else int(quote[0])+int(quote[1])
+    # Registros antigos mantêm a regra da época: detalhamento substitui estimativa.
+    # Novos orçamentos v1.9 somam estimativas não detalhadas e itens individuais.
+    columns={r[1] for r in con.execute('PRAGMA table_info(orcamentos)')}
+    mixed=bool(con.execute('SELECT calculo_misto FROM orcamentos WHERE id=?',
+                           (qid,)).fetchone()[0]) if 'calculo_misto' in columns else False
+    subtotal=(int(quote[0])+int(quote[1])+int(amount or 0)) if mixed else (
+        int(amount or 0) if count else int(quote[0])+int(quote[1]))
     if int(quote[2]) > subtotal:
         raise ValueError('O desconto ultrapassa os itens do orçamento.')
     return subtotal-int(quote[2])

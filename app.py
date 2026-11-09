@@ -16,7 +16,7 @@ import urllib.parse
 from base_app import App as BaseApp, connect, init_db, DB, brl, money_to_cents
 from office_flow import migrate, decide_quote, order_balance, report_data, search_cash, payment, APPROVED, REJECTED, PENDING
 
-APP_VERSION='1.8.0 - Avaliação operacional'
+APP_VERSION='1.9.0 - Avaliação operacional'
 
 def extra_db():
     with connect() as con:
@@ -151,12 +151,12 @@ class App(BaseApp):
         ttk.Label(tab,text='Peças, acessórios e produtos | Estoque local',font=('Segoe UI',15,'bold')).pack(anchor='w')
         self.inv=self.line(ttk.LabelFrame(tab,text='Nova peça / reposição',padding=8),[]) if False else None
         frm=ttk.LabelFrame(tab,text='Cadastro de peças',padding=8);frm.pack(fill='x',pady=8)
-        self.inv=self.line(frm,[('sku','Código'),('nome','Descrição *'),('unidade','Unidade'),('quantidade','Quantidade inicial'),('custo','Custo unitário R$'),('preco','Preço de venda R$'),('minimo','Estoque mínimo'),('fornecedor','Fornecedor'),('categoria','Categoria: Peça / Acessório / Capacete / GPS')]);self.inv['unidade'].set('un')
+        self.inv=self.line(frm,[('sku','Código'),('nome','Descrição *'),('unidade','Unidade'),('quantidade','Quantidade inicial'),('custo','Custo unitário R$'),('preco','Preço de venda R$'),('minimo','Estoque mínimo'),('fornecedor','Fornecedor'),('categoria','Categoria: Peça / Acessório / Capacete / GPS'),('localizacao','Localização (corredor / prateleira / caixa)')]);self.inv['unidade'].set('un')
         row=ttk.Frame(tab);row.pack(fill='x')
         ttk.Button(row,text='Cadastrar peça',command=lambda:self.alert(self.save_inventory)).pack(side='left',padx=3)
         ttk.Button(row,text='Repor estoque selecionado',command=lambda:self.alert(self.restock)).pack(side='left',padx=3)
         ttk.Button(row,text='Atualizar',command=self.refresh_extended).pack(side='left',padx=3)
-        self.stock_tree=tree(tab,['ID','Código','Peça','Qtde','Custo','Preço','Mínimo','Fornecedor'])
+        self.stock_tree=tree(tab,['ID','Código','Peça','Qtde','Custo','Preço','Mínimo','Fornecedor','Localização'])
 
     def save_inventory(self):
         d={k:v.get().strip() for k,v in self.inv.items()}
@@ -164,7 +164,7 @@ class App(BaseApp):
         qty=float((d['quantidade'] or '0').replace(',','.'));minimum=float((d['minimo'] or '0').replace(',','.'))
         if qty<0 or minimum<0:raise ValueError('Quantidades negativas não são permitidas.')
         with connect() as con:
-            con.execute('INSERT INTO pecas(sku,nome,unidade,quantidade,custo,preco,minimo,fornecedor,categoria) VALUES(?,?,?,?,?,?,?,?,?)',(d['sku'] or None,d['nome'],d['unidade'] or 'un',qty,cash(d['custo']),cash(d['preco']),minimum,d['fornecedor'],d['categoria'] or 'Peça'))
+            con.execute('INSERT INTO pecas(sku,nome,unidade,quantidade,custo,preco,minimo,fornecedor,categoria,localizacao) VALUES(?,?,?,?,?,?,?,?,?,?)',(d['sku'] or None,d['nome'],d['unidade'] or 'un',qty,cash(d['custo']),cash(d['preco']),minimum,d['fornecedor'],d['categoria'] or 'Peça',d['localizacao']))
         for v in self.inv.values():v.set('')
         self.refresh_extended()
 
@@ -216,11 +216,8 @@ class App(BaseApp):
         self.refresh_extended()
 
     def quote_total(self,con,qid):
-        o=con.execute('SELECT pecas_centavos,mao_obra_centavos,desconto_centavos FROM orcamentos WHERE id=?',(qid,)).fetchone()
-        count,amount=con.execute('SELECT count(*),coalesce(sum(round(quantidade*unitario)),0) FROM orcamento_itens WHERE orcamento_id=?',(qid,)).fetchone()
-        total=int(amount) if count else o[0]+o[1]
-        if o[2]>total:raise ValueError('Desconto excede os itens do orçamento.')
-        return total-o[2]
+        from office_flow import quote_value
+        return quote_value(con,qid)
 
     def make_orders(self):
         tab=self.scroll_tab('Ordens de serviço')
@@ -1002,7 +999,7 @@ class App(BaseApp):
 
     def refresh_extended(self):
         with connect() as con:
-            stocks=con.execute('SELECT id,coalesce(sku,""),nome,quantidade,custo,preco,minimo,coalesce(fornecedor,"") FROM pecas ORDER BY nome').fetchall()
+            stocks=con.execute('SELECT id,coalesce(sku,""),nome,quantidade,custo,preco,minimo,coalesce(fornecedor,""),coalesce(localizacao,"") FROM pecas ORDER BY nome').fetchall()
             staff=con.execute('SELECT id,nome,coalesce(especialidade,""),comissao_percent FROM profissionais WHERE ativo=1').fetchall()
             customers=con.execute('SELECT id,nome FROM clientes ORDER BY nome').fetchall()
             quotes=con.execute('SELECT o.id,c.nome,v.placa,o.status FROM orcamentos o JOIN clientes c ON c.id=o.cliente_id JOIN veiculos v ON v.id=o.veiculo_id ORDER BY o.id DESC').fetchall()
@@ -1014,7 +1011,7 @@ class App(BaseApp):
         self.maps={'stock':{f'{r[2]} (#{r[0]})':r[0] for r in stocks},'staff':{f'{r[1]} (#{r[0]})':r[0] for r in staff},'quotes':{f'#{r[0]:06d} | {r[1]} | {r[2]} | {r[3]}':r[0] for r in quotes},'customers':{f'{r[1]} (#{r[0]})':r[0] for r in customers},'os':{f'OS #{r[0]:06d} - {r[3]}':r[0] for r in orders}}
         for widget,keys in [(self.item_quote,'quotes'),(self.os_quote,'quotes'),(self.item_stock,'stock'),(self.os_mechanic,'staff'),(self.quote_mechanic,'staff'),(self.ag_mech,'staff'),(self.ag_customer,'customers'),(self.pay_os,'os'),(self.ck_os,'os')]:
             old=widget.get();widget['values']=list(self.maps[keys]);widget.set(old if old in self.maps[keys] else '')
-        for widget,values in [(self.stock_tree,[(r[0],r[1],r[2],r[3],brl(r[4]),brl(r[5]),r[6],r[7]) for r in stocks]),(self.staff_tree,staff),(self.items_tree,[(r[0],r[1],r[2],r[3],brl(r[4]),brl(round(r[3]*r[4]))) for r in items]),(self.os_tree,[(r[0],r[1],r[2],r[3],r[4],r[5],r[6],brl(r[7])) for r in orders]),(self.schedule_tree,sched),(self.pay_tree,[(r[0],r[1],r[2],r[3],r[4],r[5] or '-',brl(r[6])) for r in pays]),(self.ck_tree,cks)]:
+        for widget,values in [(self.stock_tree,[(r[0],r[1],r[2],r[3],brl(r[4]),brl(r[5]),r[6],r[7],r[8]) for r in stocks]),(self.staff_tree,staff),(self.items_tree,[(r[0],r[1],r[2],r[3],brl(r[4]),brl(round(r[3]*r[4]))) for r in items]),(self.os_tree,[(r[0],r[1],r[2],r[3],r[4],r[5],r[6],brl(r[7])) for r in orders]),(self.schedule_tree,sched),(self.pay_tree,[(r[0],r[1],r[2],r[3],r[4],r[5] or '-',brl(r[6])) for r in pays]),(self.ck_tree,cks)]:
             widget.delete(*widget.get_children())
             for row in values:widget.insert('','end',values=row)
         inc=sum(r[6] for r in pays if r[4]=='Entrada');out=sum(r[6] for r in pays if r[4]=='Saída')
@@ -1039,7 +1036,10 @@ class AppV17(WorkshopFlowV17, AppV16):
 from workflow_v18 import SimplifiedCheckoutV18
 class AppV18(SimplifiedCheckoutV18, AppV17):
     pass
-App = AppV18
+from ux_v19 import WorkspaceV19
+class AppV19(WorkspaceV19, AppV18):
+    pass
+App = AppV19
 
 if __name__=='__main__':
     init_db();extra_db();App().mainloop()

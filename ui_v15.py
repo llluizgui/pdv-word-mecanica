@@ -140,10 +140,23 @@ class ModernExperience:
                  fg='#9EC5FF', bg=NAVY).pack(anchor='w')
         tk.Label(hero, text='Tudo em um só lugar.', font=('Segoe UI Semibold', 23),
                  fg=WHITE, bg=NAVY).pack(anchor='w', pady=(4, 5))
-        tk.Label(hero, text='Cliente  >  Veículo  >  Orçamento  >  Itens  >  Revisão final',
+        tk.Label(hero, text='Cada etapa na sua aba: atendimento rápido e sem excesso de campos.',
                  font=('Segoe UI', 10), fg='#D8E5FA', bg=NAVY).pack(anchor='w')
+        self._attendance_tabs = ttk.Notebook(tab, style='Compact.TNotebook')
+        self._attendance_tabs.pack(fill='both', expand=True, pady=(0, 7))
+        page_customer = ttk.Frame(self._attendance_tabs, padding=10)
+        page_vehicle = ttk.Frame(self._attendance_tabs, padding=10)
+        page_budget = ttk.Frame(self._attendance_tabs, padding=10)
+        page_items = ttk.Frame(self._attendance_tabs, padding=10)
+        page_review = ttk.Frame(self._attendance_tabs, padding=10)
+        page_history = ttk.Frame(self._attendance_tabs, padding=10)
+        for title, page in [('Cliente',page_customer),('Veículo',page_vehicle),
+                            ('Orçamento',page_budget),('Peças e serviços',page_items),
+                            ('Finalizar',page_review),('Histórico',page_history)]:
+            self._attendance_tabs.add(page, text=title)
+        self._attend_budget_page = page_budget
 
-        customer = self._card(tab, '01', 'Identificação do cliente',
+        customer = self._card(page_customer, '01', 'Identificação do cliente',
                               'Encontre um cadastro existente ou preencha os dados abaixo e salve sem sair do atendimento.')
         ttk.Label(customer, text='CLIENTE CADASTRADO — BUSCA POR NOME', style='CardMuted.TLabel').pack(anchor='w')
         self.quote_customer = ttk.Combobox(customer, state='normal')
@@ -161,7 +174,7 @@ class ModernExperience:
             ('+ SALVAR E SELECIONAR CLIENTE', lambda: self.alert(self.save_customer), 'Soft.TButton'),
         ])
 
-        vehicle = self._card(tab, '02', 'Veículo do cliente',
+        vehicle = self._card(page_vehicle, '02', 'Veículo do cliente',
                              'Os veículos já cadastrados aparecem após selecionar o cliente. Você também pode adicionar outro aqui.')
         ttk.Label(vehicle, text='VEÍCULO VINCULADO', style='CardMuted.TLabel').pack(anchor='w')
         self.quote_vehicle = ttk.Combobox(vehicle, state='normal')
@@ -179,7 +192,7 @@ class ModernExperience:
             ('+ SALVAR E SELECIONAR VEÍCULO', lambda: self.alert(self.save_vehicle), 'Soft.TButton'),
         ])
 
-        budget = self._card(tab, '03', 'Orçamento de serviço',
+        budget = self._card(page_budget, '03', 'Orçamento de serviço',
                             'Descreva o que será feito, selecione o mecânico e informe valores e prazo.')
         ttk.Label(budget, text='DEFEITO / SERVIÇO SOLICITADO *', style='CardMuted.TLabel').pack(anchor='w')
         self.description = tk.StringVar()
@@ -188,12 +201,12 @@ class ModernExperience:
         self.quote_mechanic = ttk.Combobox(budget, state='readonly')
         self.quote_mechanic.pack(fill='x', pady=(5, 7))
         self.q = self._form_card(budget, [
-            ('pecas', 'Peças estimadas (R$)'), ('mao', 'Mão de obra (R$)'),
+            ('pecas', 'Peças não detalhadas (somar R$)'), ('mao', 'Mão de obra não detalhada (somar R$)'),
             ('desconto', 'Desconto (R$)'), ('validade', 'Validade da proposta (dd/mm/aaaa)'),
         ])
-        self._info(budget, 'Ao adicionar itens detalhados na próxima etapa, o subtotal será calculado pelos itens.')
+        self._info(budget, 'Peças e mão de obra informadas aqui SOMAM com os itens detalhados. Evite lançar o mesmo serviço duas vezes.')
 
-        items = self._card(tab, '04', 'Peças, produtos e mão de obra',
+        items = self._card(page_items, '04', 'Peças, produtos e mão de obra',
                            'Adicione peças do estoque e serviços diretamente à mesma ficha.')
         self.item_quote = ttk.Combobox(items)  # Compatibilidade com refresh_extended de versoes anteriores.
         inputs = ttk.Frame(items, style='Card.TFrame')
@@ -225,7 +238,7 @@ class ModernExperience:
         self.item_summary = ttk.Label(items, style='CardMuted.TLabel', text='Nenhum item no orçamento.')
         self.item_summary.pack(anchor='w', pady=(6, 2))
 
-        overview = self._card(tab, '05', 'Revisão e validação',
+        overview = self._card(page_review, '05', 'Revisão e validação',
                               'Confira tudo antes de salvar. A aprovação do cliente é registrada separadamente.')
         review = ttk.Frame(overview, style='Card.TFrame')
         review.pack(fill='x')
@@ -254,7 +267,7 @@ class ModernExperience:
             ('WhatsApp', self.whatsapp, 'TButton'),
         ])
 
-        previous = self._card(tab, '✓', 'Histórico de orçamentos',
+        previous = self._card(page_history, '✓', 'Histórico de orçamentos',
                               'Para abrir um orçamento antigo, selecione uma linha; os detalhes aparecem nas etapas acima.')
         self.quote_tree = _grid(previous, ['Nº', 'Data', 'Cliente', 'Veículo', 'Total', 'Status'],
                                 widths=[70, 95, 175, 180, 115, 155], height=7)
@@ -290,6 +303,8 @@ class ModernExperience:
     def _select_previous_quote(self, event=None):
         super().select_quote_for_edit(event)
         self._live_summary()
+        if hasattr(self,'_attendance_tabs'):
+            self._attendance_tabs.select(self._attend_budget_page)
 
     def _live_summary(self):
         if not hasattr(self, 'summary_total'):
@@ -304,9 +319,12 @@ class ModernExperience:
                     detail = con.execute('SELECT count(*),coalesce(sum(round(quantidade*unitario)),0) FROM orcamento_itens WHERE orcamento_id=?',
                                          (self.editing_quote_id,)).fetchone()
                 count, sum_cents = int(detail[0]), int(detail[1])
+                mixed = bool(con.execute('SELECT calculo_misto FROM orcamentos WHERE id=?',
+                                         (self.editing_quote_id,)).fetchone()[0])
             except Exception:
-                count, sum_cents = 0, 0
+                count, sum_cents, mixed = 0, 0, False
         else:
+            mixed = True
             count = len(self.quote_draft)
             sum_cents = sum(round(x['quantidade'] * x['unitario']) for x in self.quote_draft)
         def amount(field):
@@ -314,7 +332,8 @@ class ModernExperience:
                 return money_to_cents(self.q[field].get())
             except (ValueError, AttributeError):
                 return 0
-        subtotal = sum_cents if count else amount('pecas') + amount('mao')
+        subtotal = (amount('pecas') + amount('mao') + sum_cents) if mixed else (
+            sum_cents if count else amount('pecas') + amount('mao'))
         discount = amount('desconto')
         self.summary_total.configure(text=brl(max(0, subtotal - discount)))
         self.summary_items.configure(text=f'Peças e serviços: {count} item(ns) detalhado(s)'
