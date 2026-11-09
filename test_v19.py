@@ -52,3 +52,70 @@ for name in expected:
     win._jump_to_attendance(name)
 win.destroy()
 print('PASSOU: seis etapas de atendimento visiveis e atalhos navegaveis')
+
+# Regressões novas v1.9.2: filtros independentes, leitor em contexto e agenda -> ficha.
+from ux_v192 import filtered_orders, scan_target
+from types import SimpleNamespace
+from tkinter import messagebox
+messagebox.askyesno=lambda *args, **kwargs: True
+messagebox.showinfo=lambda *args, **kwargs: None
+messagebox.showwarning=lambda *args, **kwargs: None
+assert len(filtered_orders(rows,month='Março'))==2
+assert len(filtered_orders(rows,year='2026'))==2
+assert len(filtered_orders(rows,status='Concluída'))==1
+assert len(filtered_orders(rows,today=True,date=__import__('datetime').date(2026,3,5)))==1
+assert scan_target('Caixa', True)=='Caixa'
+assert scan_target('Caixa', False) is None
+assert scan_target('Atendimento')=='Atendimento'
+with connect() as con:
+    con.execute("UPDATE pecas SET sku='7506306241183',preco=1234,quantidade=7 WHERE id=?", (product,))
+    mid=con.execute("INSERT INTO profissionais(nome) VALUES('Mecânico da agenda')").lastrowid
+    aid=con.execute("""INSERT INTO agendamentos(cliente_id,veiculo_id,profissional_id,data,hora,descricao)
+                      VALUES(?,?,?, '2026-12-01','10:00','Revisar freios')""",(c,v,mid)).lastrowid
+win=App()
+win.withdraw()
+win.update_idletasks()
+assert win.os_filter_month.get()=='Todos' and win.os_filter_year.get()=='Todos'
+assert win.os_filter_status.get()=='Todos'
+win.os_filter_month.set('Março')
+win.os_filter_year.set('Todos')
+win._apply_os_filter(reset=True)
+win.os_filter_month.set('Todos')
+win.os_filter_status.set('Aberta')
+win._apply_os_filter(reset=True)
+win._all_orders()
+win.nb.select(win.tabs['Caixa'])
+win.cash_notebook.select(win.cash_products_tab)
+customer_label=next(k for k, cid in win.sale_customer_map.items() if cid==c)
+win.sale_customer.set(customer_label)
+win._checkout_client_selected()
+barcode='7506306241183'
+for i, ch in enumerate(barcode):
+    win._scan_keypress(SimpleNamespace(keysym=ch,char=ch,state=0,time=10000+20*i,widget=win.sale_customer))
+assert win.sale_customer.get()==customer_label, 'Leitura nao pode modificar cliente'
+assert len(win.cart)==1 and win.cart[0]['qty']==1
+assert '12,34' in win.checkout_sticky_total.cget('text')
+win._scan_keypress(SimpleNamespace(keysym='Return',char='\\r',state=0,time=10270,widget=win.sale_customer))
+assert len(win.cart)==1 and win.cart[0]['qty']==1, 'Enter duplo nao pode adicionar outro produto'
+win.nb.select(win.tabs['Atendimento'])
+win.new_quote_draft()
+quote_customer_label=next(k for k,cid in win.customers.items() if cid==c)
+win.quote_customer.set(quote_customer_label)
+win._on_customer_changed()
+for i,ch in enumerate(barcode):
+    win._scan_keypress(SimpleNamespace(keysym=ch,char=ch,state=0,time=20000+20*i,widget=win.quote_customer))
+assert len(win.quote_draft)==1 and win.quote_draft[0]['peca_id']==product
+assert win.quote_customer.get()==quote_customer_label
+win.nb.select(win.tabs['Agenda'])
+win.refresh_extended()
+row=next(item for item in win.schedule_tree.get_children() if int(win.schedule_tree.item(item,'values')[0])==aid)
+win.schedule_tree.selection_set(row)
+win.open_selected_appointment()
+assert win.nb.select()==str(win.tabs['Atendimento'])
+assert win.customers.get(win.quote_customer.get())==c
+assert win.vehicles.get(win.quote_vehicle.get())==v
+assert win.description.get()=='Revisar freios'
+with connect() as con:
+    assert con.execute('SELECT status FROM agendamentos WHERE id=?',(aid,)).fetchone()[0]=='Em atendimento'
+win.destroy()
+print('PASSOU: filtros de OS, scanner sem troca de cliente, orçamento e agenda')

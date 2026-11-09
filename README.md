@@ -40,3 +40,9 @@ Esta é uma **versão de avaliação** que ainda precisa de testes reais de inst
 
 ## Correção 1.9.1 — ficha completa
 O Atendimento voltou a exibir as seis seções no mesmo painel de rolagem, com atalhos para Cliente, Veículo, Orçamento, Peças e mão de obra, Finalizar e Histórico. Remove o Notebook interno que podia esconder as seções em algumas telas. Nenhum banco de dados é apagado nessa correção.
+
+## Versão 1.9.2 — Scanner, agenda e filtros
+- Leitor USB de teclado: no Caixa e Atendimento, reconhece SKU cadastrado mesmo que o campo de cliente esteja em foco. EAN-13 válido cadastrado pode entrar automaticamente sem Enter; códigos de outros tamanhos exigem Enter do scanner. O caixa soma cada leitura no carrinho e no valor a receber, com proteção de estoque e da OS. Tecla F8 posiciona o cursor na busca do produto.
+- Atenção: os produtos precisam ter o código (SKU) cadastrado exatamente como o leitor envia. Teste em ambiente de avaliação antes de atender clientes.
+- Ordens de serviço: mês, ano e situação independentes, com atalhos Hoje, Este mês, Todos, contadores por situação e paginação de 20 por tela.
+- Agenda: ao selecionar e confirmar agendamento, abre nova ficha no Atendimento, preenchendo cliente, veículo, mecânico e descrição. Status vira Em atendimento. Nenhuma OS ou cobrança é gerada automaticamente.
