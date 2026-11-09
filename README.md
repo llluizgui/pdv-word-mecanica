@@ -46,3 +46,11 @@ O Atendimento voltou a exibir as seis seções no mesmo painel de rolagem, com a
 - Atenção: os produtos precisam ter o código (SKU) cadastrado exatamente como o leitor envia. Teste em ambiente de avaliação antes de atender clientes.
 - Ordens de serviço: mês, ano e situação independentes, com atalhos Hoje, Este mês, Todos, contadores por situação e paginação de 20 por tela.
 - Agenda: ao selecionar e confirmar agendamento, abre nova ficha no Atendimento, preenchendo cliente, veículo, mecânico e descrição. Status vira Em atendimento. Nenhuma OS ou cobrança é gerada automaticamente.
+
+## Versão 1.9.3 — Caixa compacto e scanner corrigido
+
+- Caixa em painel compacto responsivo: cliente e busca de produto à esquerda; carrinho e pagamento à direita em telas largas, ou empilhados em telas menores. Total fixo no alto, sem banners e totais repetidos. A aba Financeiro/Despesas permanece disponível para preservar funções.
+- Entrada por bipador, código manual, rótulo de seleção ou nome exato passa por validação de **ID de produto**, não só texto mostrado no campo. Enter/bipe = localizar e adicionar em uma ação, com atualização do total.
+- Mantidas as regras de estoque, carrinho e OS: peça que já foi lançada na OS não pode entrar novamente na venda extra; a baixa física acontece só ao finalizar.
+- Quantidade manual permanece ajustável; bipadas adicionam uma unidade por leitura.
+- Este programa é uma avaliação sem emissão fiscal. Faça cópia de segurança do banco em \`%LOCALAPPDATA%\PDVWordMecanica\` antes de atualizar e teste o scanner físico do cliente.
