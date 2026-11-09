@@ -1,0 +1,25 @@
+name: Remover publicacao antiga 1.9.0
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/remover-publicacao-1-9.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  remover-publicacao:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retirar release 1.9.0 mantendo o historico de commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view v1.9.0-avaliacao --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete v1.9.0-avaliacao --repo "$GITHUB_REPOSITORY" --yes
+          fi
+          gh release view v1.8.1-avaliacao --repo "$GITHUB_REPOSITORY" >/dev/null
