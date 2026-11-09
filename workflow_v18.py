@@ -166,7 +166,7 @@ def _p(text,style):
     return Paragraph(html.escape(str(text if text is not None and str(text) else '-')).replace('\n','<br/>'),style)
 
 
-def technical_pdf(target,title,profile,sections,photos=(),note='DOCUMENTO COMERCIAL NÃO FISCAL',signature=None):
+def technical_pdf(target,title,profile,sections,photos=(),note='DOCUMENTO COMERCIAL NÃO FISCAL'):
     """A4 inspirado no modelo do usuario: logo editavel + cabecalho neutro + secoes."""
     from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Spacer,Image as PdfImage,Paragraph,KeepTogether
     from reportlab.lib import colors
@@ -226,14 +226,6 @@ def technical_pdf(target,title,profile,sections,photos=(),note='DOCUMENTO COMERC
             photo_count+=1
         except Exception:continue
     if photos and not photo_count:story.append(_p('As imagens não estão disponíveis neste computador.',styles['Small']))
-    if signature and Path(signature).is_file():
-        try:
-            with PILImage.open(signature) as sign:w,h=sign.size
-            scale=min(90*mm/max(w,1),31*mm/max(h,1))
-            story.append(_p('Ciência / assinatura manuscrita do cliente',styles['Section']))
-            story.append(PdfImage(str(signature),width=w*scale,height=h*scale))
-            story.append(_p('Assinatura coletada no atendimento; não é assinatura digital qualificada.',styles['Small']))
-        except Exception:story.append(_p('Assinatura indisponível nesta cópia.',styles['Small']))
     story.extend([Spacer(1,10*mm),_p(note,styles['Small'])])
     target=Path(target);target.parent.mkdir(parents=True,exist_ok=True)
     SimpleDocTemplate(str(target),pagesize=A4,leftMargin=16*mm,rightMargin=16*mm,
@@ -272,8 +264,6 @@ def compact_receipt_pdf(target,profile,receipt):
     if row[2].strip().casefold()=='dinheiro' and receipt.get('cash_received'):
         story.append(_p('Dinheiro entregue: '+brl(receipt['cash_received']),styles['Text9']))
         story.append(_p('Troco devolvido: '+brl(receipt.get('change',0)),styles['Text9']))
-    if receipt.get('remaining_after',0)>0:
-        story.append(_p('PAGAMENTO PARCIAL — SALDO DA OS: '+brl(receipt['remaining_after']),styles['Text9']))
     story.extend([_p('Pagamento registrado. Este recibo não substitui nota fiscal quando exigível.',styles['Small']),
                   Spacer(1,13*mm),
                   HRFlowable(width='100%',thickness=.35,color=colors.HexColor('#A9B0B7')),
