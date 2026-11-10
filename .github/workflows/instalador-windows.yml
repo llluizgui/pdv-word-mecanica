@@ -8,7 +8,9 @@ on:
       - ux_v19.py
       - ux_v192.py
       - ux_v193.py
+      - ux_v194.py
       - test_v193.py
+      - test_v194.py
       - ui_v15.py
       - ui_v14.py
       - office_flow.py
@@ -25,7 +27,7 @@ permissions:
 
 jobs:
   compilar:
-    name: Verificar, testar e gerar Setup Windows 1.9.3
+    name: Verificar, testar e gerar Setup Windows 1.9.4
     runs-on: windows-2022
     steps:
       - name: Obter codigo do repositorio
@@ -42,7 +44,7 @@ jobs:
         run: |
           python -m pip install pyinstaller==6.16.0 reportlab==4.4.9 pypdf==5.9.0 pillow
           if ($LASTEXITCODE -ne 0) { throw 'Dependencias nao instaladas.' }
-          python -m py_compile app.py base_app.py office_flow.py ui_v14.py ui_v15.py ui_v16.py workflow_v17.py workflow_v18.py test_flow.py test_v18.py ux_v19.py ux_v192.py ux_v193.py test_v19.py test_v193.py
+          python -m py_compile app.py base_app.py office_flow.py ui_v14.py ui_v15.py ui_v16.py workflow_v17.py workflow_v18.py test_flow.py test_v18.py ux_v19.py ux_v192.py ux_v193.py ux_v194.py test_v19.py test_v193.py test_v194.py
           if ($LASTEXITCODE -ne 0) { throw 'Erro de sintaxe.' }
 
       - name: Testar atendimento, troco, recibo A5, estoque e vendas
@@ -56,6 +58,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Teste de regressao 1.9 falhou. Nao publicar.' }
           python test_v193.py
           if ($LASTEXITCODE -ne 0) { throw 'Teste de caixa compacto e scanner falhou. Nao publicar.' }
+          python test_v194.py
+          if ($LASTEXITCODE -ne 0) { throw 'Teste da OS semanal e busca falhou. Nao publicar.' }
 
       - name: Compilar aplicativo offline com PyInstaller
         shell: pwsh
@@ -73,14 +77,14 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Inno Setup indisponivel.' }
           }
 
-      - name: Gerar instalador 1.9.3
+      - name: Gerar instalador 1.9.4
         shell: pwsh
         run: |
           $iscc = @('C:\Program Files (x86)\Inno Setup 6\ISCC.exe','C:\Program Files\Inno Setup 6\ISCC.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $iscc) { throw 'ISCC.exe nao encontrado.' }
           & $iscc PDVWordMecanica.iss
           if ($LASTEXITCODE -ne 0) { throw 'Geracao do Setup falhou.' }
-          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.9.3.exe')) { throw 'Setup 1.9.3 nao foi gerado.' }
+          if (-not (Test-Path 'instalador/PDVWord_Mecanica_Setup_1.9.4.exe')) { throw 'Setup 1.9.4 nao foi gerado.' }
 
       - name: Verificar instalador e EXE com Microsoft Defender
         shell: pwsh
@@ -90,7 +94,7 @@ jobs:
           Write-Host "Assinaturas Defender: $($st.AntivirusSignatureVersion)"
           Write-Host "Protecao em tempo real no runner: $($st.RealTimeProtectionEnabled)"
           try { Update-MpSignature -ErrorAction Stop } catch { Write-Warning "Atualizacao das assinaturas nao concluida: $_" }
-          $targets = @('dist/PDVWordMecanica/PDVWordMecanica.exe','instalador/PDVWord_Mecanica_Setup_1.9.3.exe')
+          $targets = @('dist/PDVWordMecanica/PDVWordMecanica.exe','instalador/PDVWord_Mecanica_Setup_1.9.4.exe')
           foreach ($file in $targets) {
             $full = (Resolve-Path $file -ErrorAction Stop).Path
             Start-MpScan -ScanType CustomScan -ScanPath $full -ErrorAction Stop
@@ -100,16 +104,16 @@ jobs:
             if ($matches.Count -gt 0 -or -not (Test-Path $full)) { throw "Arquivo bloqueado pelo Defender: $file. Publicacao suspensa." }
             Write-Host "Varredura pontual sem deteccao no runner: $file"
           }
-          $hash = (Get-FileHash 'instalador/PDVWord_Mecanica_Setup_1.9.3.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash *PDVWord_Mecanica_Setup_1.9.3.exe" | Set-Content 'instalador/SHA256SUMS.txt' -Encoding ascii
+          $hash = (Get-FileHash 'instalador/PDVWord_Mecanica_Setup_1.9.4.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *PDVWord_Mecanica_Setup_1.9.4.exe" | Set-Content 'instalador/SHA256SUMS.txt' -Encoding ascii
           Write-Host "SHA256 do setup: $hash"
 
       - name: Guardar instalador como artefato
         uses: actions/upload-artifact@v4
         with:
-          name: PDVWord-Mecanica-Setup-1.9.3
+          name: PDVWord-Mecanica-Setup-1.9.4
           path: |
-            instalador/PDVWord_Mecanica_Setup_1.9.3.exe
+            instalador/PDVWord_Mecanica_Setup_1.9.4.exe
             instalador/SHA256SUMS.txt
           retention-days: 30
           if-no-files-found: error
@@ -119,12 +123,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $asset = 'instalador/PDVWord_Mecanica_Setup_1.9.3.exe'
-          $tag = 'v1.9.3-avaliacao'
+          $asset = 'instalador/PDVWord_Mecanica_Setup_1.9.4.exe'
+          $tag = 'v1.9.4-avaliacao'
           gh release view $tag 2>$null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $asset 'instalador/SHA256SUMS.txt' --clobber
           } else {
-            gh release create $tag $asset 'instalador/SHA256SUMS.txt' --title 'PDV Word Mecânica 1.9.3 - Caixa simplificado' --notes 'Versao 1.9.3: atendimento organizado em abas; orçamentos novos somam valores não detalhados e peças/serviços, sem mudar orçamentos antigos; ordens por mês/ano/status e paginação; leitor adiciona no Enter e atualiza o total no topo do caixa; pergunta se deseja imprimir após receber; localização física do estoque. Testes automáticos e varredura Defender no runner. Avaliação sem emissao fiscal nem TEF; instalação não assinada pode ser bloqueada pelo Windows. Faça backup antes de atualizar.' --prerelease
+            gh release create $tag $asset 'instalador/SHA256SUMS.txt' --title 'PDV Word Mecânica 1.9.4 - Caixa simplificado' --notes 'Versao 1.9.4: atendimento organizado em abas; orçamentos novos somam valores não detalhados e peças/serviços, sem mudar orçamentos antigos; ordens por mês/ano/status e paginação; leitor adiciona no Enter e atualiza o total no topo do caixa; pergunta se deseja imprimir após receber; localização física do estoque. Testes automáticos e varredura Defender no runner. Avaliação sem emissao fiscal nem TEF; instalação não assinada pode ser bloqueada pelo Windows. Faça backup antes de atualizar.' --prerelease
           }
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar release.' }

@@ -16,7 +16,7 @@ import urllib.parse
 from base_app import App as BaseApp, connect, init_db, DB, brl, money_to_cents
 from office_flow import migrate, decide_quote, order_balance, report_data, search_cash, payment, APPROVED, REJECTED, PENDING
 
-APP_VERSION='1.9.3 - Avaliação operacional'
+APP_VERSION='1.9.4 - Avaliação operacional'
 
 def extra_db():
     with connect() as con:
@@ -523,13 +523,14 @@ class App(BaseApp):
         if not oid:raise ValueError('Selecione uma OS.')
         with connect() as con:
             row=con.execute('''SELECT o.id,o.abertura,o.status,o.problema,o.diagnostico,o.valor,c.nome,c.documento,c.whatsapp,v.tipo,v.marca,v.modelo,v.placa,v.serie,o.orcamento_id FROM ordens o JOIN clientes c ON o.cliente_id=c.id JOIN veiculos v ON o.veiculo_id=v.id WHERE o.id=?''',(oid,)).fetchone()
+            if row is None: raise ValueError('OS não encontrada no banco de dados.')
             items=con.execute('SELECT tipo,descricao,quantidade,unitario FROM orcamento_itens WHERE orcamento_id=?',(row[-1],)).fetchall()
             cfg=self.office_settings(con) if hasattr(self,'office_settings') else dict(name='PDV Word Mecânica',document='',address='',city='',phone='')
-            mechanic=con.execute('''SELECT coalesce(p.nome,''),coalesce(p.documento,'') FROM ordens o
+            mechanic=con.execute('''SELECT coalesce(p.nome,''),coalesce(p.especialidade,'') FROM ordens o
                LEFT JOIN profissionais p ON p.id=o.profissional_id WHERE o.id=?''',(oid,)).fetchone()
         cells=''.join(f'<tr><td>{html.escape(typ)}</td><td>{html.escape(name)}</td><td>{qty:g}</td><td>{brl(price)}</td></tr>' for typ,name,qty,price in items)
         header=f'<h1>{html.escape(cfg["name"])}</h1><p>CPF/CNPJ: {html.escape(cfg["document"])} | {html.escape(cfg["address"])} | {html.escape(cfg["city"])}<br>Contato: {html.escape(cfg["phone"])} | Impressão: {dt.datetime.now().strftime("%d/%m/%Y %H:%M")}</p>'
-        body=f'{header}<h2>Ordem de Serviço #{row[0]:06d}</h2><p>Data: {row[1]} | Status: {html.escape(row[2])}</p><h3>Cliente</h3><p>{html.escape(row[6])} | {html.escape(row[7] or "")} | {html.escape(row[8] or "")}</p><h3>Veículo</h3><p>{html.escape(" ".join(str(x or "") for x in row[9:12]))} | Placa: {html.escape(row[12] or "")} | Chassi: {html.escape(row[13] or "")}</p><h3>Serviço</h3><p>Mecânico: {html.escape((mechanic or (None,None))[0] or "Não informado")} | CPF: {html.escape((mechanic or (None,None))[1] or "Não informado")}<br>Problema: {html.escape(row[3] or "")}<br>Diagnóstico: {html.escape(row[4] or "")}</p><table border="1" cellspacing="0" cellpadding="7"><tr><th>Tipo</th><th>Descrição</th><th>Qtde</th><th>Unitário</th></tr>{cells}</table><h2>Total: {brl(row[5])}</h2><hr><p>Assinatura do cliente: _____________________________________</p>'
+        body=f'{header}<h2>Ordem de Serviço #{row[0]:06d}</h2><p>Data: {row[1]} | Status: {html.escape(row[2])}</p><h3>Cliente</h3><p>{html.escape(row[6])} | {html.escape(row[7] or "")} | {html.escape(row[8] or "")}</p><h3>Veículo</h3><p>{html.escape(" ".join(str(x or "") for x in row[9:12]))} | Placa: {html.escape(row[12] or "")} | Chassi: {html.escape(row[13] or "")}</p><h3>Serviço</h3><p>Mecânico: {html.escape((mechanic or (None,None))[0] or "Não informado")} | Especialidade: {html.escape((mechanic or (None,None))[1] or "Não informado")}<br>Problema: {html.escape(row[3] or "")}<br>Diagnóstico: {html.escape(row[4] or "")}</p><table border="1" cellspacing="0" cellpadding="7"><tr><th>Tipo</th><th>Descrição</th><th>Qtde</th><th>Unitário</th></tr>{cells}</table><h2>Total: {brl(row[5])}</h2><hr><p>Assinatura do cliente: _____________________________________</p>'
         target=Path(tempfile.gettempdir())/f'PDV_Mecanica_OS_{oid:06d}.html';target.write_text('<!doctype html><html lang="pt-br"><meta charset="utf-8"><title>OS</title><body style="font:15px Arial;max-width:850px;margin:40px auto">'+body+'</body></html>',encoding='utf-8')
         webbrowser.open(target.as_uri())
 
@@ -1045,7 +1046,10 @@ class AppV192(WorkspaceV192, AppV18):
 from ux_v193 import WorkspaceV193
 class AppV193(WorkspaceV193, AppV18):
     pass
-App = AppV193
+from ux_v194 import WorkspaceV194
+class AppV194(WorkspaceV194, AppV18):
+    pass
+App = AppV194
 
 if __name__=='__main__':
     init_db();extra_db();App().mainloop()

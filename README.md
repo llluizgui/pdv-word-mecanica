@@ -54,3 +54,15 @@ O Atendimento voltou a exibir as seis seções no mesmo painel de rolagem, com a
 - Mantidas as regras de estoque, carrinho e OS: peça que já foi lançada na OS não pode entrar novamente na venda extra; a baixa física acontece só ao finalizar.
 - Quantidade manual permanece ajustável; bipadas adicionam uma unidade por leitura.
 - Este programa é uma avaliação sem emissão fiscal. Faça cópia de segurança do banco em \`%LOCALAPPDATA%\PDVWordMecanica\` antes de atualizar e teste o scanner físico do cliente.
+
+## Versão 1.9.4 — OS compacta e semanal
+
+- Redesenho da aba Ordens de Serviço no padrão visual do Caixa: orçamento e mecânico no topo, com botões Aprovar, Vincular aprovado, Iniciar, Concluir, Imprimir, Receber, Relatório final e Checklist agrupados.
+- Campos técnicos antigos continuam disponíveis em **Detalhes opcionais**, sem ocupar a tela por padrão; "Vincular aprovado" somente para orçamento previamente aprovado, ainda sem OS.
+- Abertura na semana atual (segunda a domingo). Semana anterior/próxima, Hoje, Esta semana, Todas, situação e filtros extras mês/ano. Histórico completo preservado, com 20 OS por página.
+- Busca de nome, placa, número e data de nascimento do cliente, em formatos AAAA-MM-DD e DD/MM/AAAA, encontra OS em todo o histórico independentemente da semana selecionada.
+- Resumo de uma OS selecionada e botões liberados pelo estado. A conclusão ainda exige fotos, por segurança.
+- Corrigida impressão da OS que tentava ler "documento" do cadastro de mecânicos, coluna inexistente. Agora mostra especialidade.
+- Somente a interface de ordens foi reorganizada; Caixa, Agenda, banco local, histórico e estoque continuam com as regras anteriores.
+
+Faça backup da pasta \`%LOCALAPPDATA%\PDVWordMecanica\` antes de atualizar. Versão de avaliação, sem emissão de documento fiscal e ainda sem assinatura digital do instalador.
