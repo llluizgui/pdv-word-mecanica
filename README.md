@@ -85,3 +85,11 @@ Faça backup da pasta \`%LOCALAPPDATA%\PDVWordMecanica\` antes de atualizar. Ver
 - Os PDFs ficam em %LOCALAPPDATA%\PDVWordMecanica\documentos, separados do banco local, e podem ser abertos novamente em **Abrir pasta PDFs**. Regerar o mesmo documento atualiza a cópia com o estado atual da OS, portanto o sistema não mantém uma versão imutável de cada emissão.
 - **Impressão corrigida:** substitui o arquivo HTML temporário por PDF A4 com visualização e mensagens de fallback quando o Windows não possui leitor de PDF ou impressora associada. O documento não é fiscal.
 - Faça backup de %LOCALAPPDATA%\PDVWordMecanica antes de instalar. O instalador continua sem assinatura digital.
+
+
+## 1.9.7 — Diagnóstico de possível falso positivo no download
+
+- Alternativa de empacotamento nativo **Nuitka --mode=standalone**, sem o bootloader do PyInstaller, mantendo o mesmo banco local e os mesmos fluxos da 1.9.6.
+- Exige testes automatizados, inicialização do EXE resultante e varredura pontual do Defender no Windows do GitHub antes de liberar o Setup.
+- **Não possui assinatura digital.** Uma compilação diferente não garante que Defender, SmartScreen ou o antivírus do cliente considerem o arquivo confiável, e não prova ausência de malware.
+- Se aparecer **vírus detectado**, não desligue as proteções. Consulte Segurança do Windows → Histórico de proteção para identificar a ameaça e envie o nome da detecção. O arquivo poderá precisar ser enviado para análise da Microsoft como suspeita de falso positivo: https://www.microsoft.com/en-us/wdsi/filesubmission/.
