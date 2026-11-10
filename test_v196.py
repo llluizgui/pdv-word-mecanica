@@ -80,12 +80,8 @@ for item in win.os_tree.get_children():
         win.os_tree.selection_set(item)
         break
 win._on_os_selected()
-print('DEBUG OS selection',win.os_tree.selection(),win._selected_status(),
-      'share:',repr(win._os_send_buttons['share_os'].cget('state')),
-      'final:',repr(win._os_send_buttons['share_final'].cget('state')),
-      'rows:',[win.os_tree.item(i,'values') for i in win.os_tree.get_children()])
-assert win._os_send_buttons['share_os'].cget('state')=='normal'
-assert win._os_send_buttons['share_final'].cget('state')=='disabled'
+assert str(win._os_send_buttons['share_os'].cget('state'))=='normal'
+assert str(win._os_send_buttons['share_final'].cget('state'))=='disabled'
 assert win.print_os()==entry
 assert entry.is_file()
 assert win.print_os_direct()==entry
@@ -113,7 +109,7 @@ for item in win.os_tree.get_children():
         win.os_tree.selection_set(item)
         break
 win._on_os_selected()
-assert win._os_send_buttons['share_final'].cget('state')=='normal'
+assert str(win._os_send_buttons['share_final'].cget('state'))=='normal'
 finished=win.print_final_os()
 assert finished==document_path(oid,finished=True)
 assert finished.is_file() and finished.read_bytes().startswith(b'%PDF')
