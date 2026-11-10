@@ -80,6 +80,10 @@ for item in win.os_tree.get_children():
         win.os_tree.selection_set(item)
         break
 win._on_os_selected()
+print('DEBUG OS selection',win.os_tree.selection(),win._selected_status(),
+      'share:',repr(win._os_send_buttons['share_os'].cget('state')),
+      'final:',repr(win._os_send_buttons['share_final'].cget('state')),
+      'rows:',[win.os_tree.item(i,'values') for i in win.os_tree.get_children()])
 assert win._os_send_buttons['share_os'].cget('state')=='normal'
 assert win._os_send_buttons['share_final'].cget('state')=='disabled'
 assert win.print_os()==entry
