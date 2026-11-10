@@ -110,7 +110,8 @@ win.print_os()
 pending=next(k for k,q in win.maps['quotes'].items() if q==q1)
 win.os_quote.set(pending)
 win._sync_os_actions()
-assert str(win._os_action_buttons['approve'].cget('state'))=='normal'
+# Desde 1.9.5: novo orçamento só pode ser aprovado após aceite documentado.
+assert str(win._os_action_buttons['approve'].cget('state')) == ('disabled' if hasattr(win,'os_accept_button') else 'normal')
 
 # Seleção de OS de outra semana deve voltar automaticamente à semana correta.
 win._show_current_week()
