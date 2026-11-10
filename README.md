@@ -66,3 +66,12 @@ O Atendimento voltou a exibir as seis seções no mesmo painel de rolagem, com a
 - Somente a interface de ordens foi reorganizada; Caixa, Agenda, banco local, histórico e estoque continuam com as regras anteriores.
 
 Faça backup da pasta \`%LOCALAPPDATA%\PDVWordMecanica\` antes de atualizar. Versão de avaliação, sem emissão de documento fiscal e ainda sem assinatura digital do instalador.
+
+## PDV Mecânica 1.9.5 — conclusão comercial offline (funcionalidades 2, 4, 5, 6 e 8)
+
+- **OS detalhada:** selecione uma OS aberta/em andamento, expanda **Detalhes opcionais**, edite previsão, defeito, diagnóstico, quilometragem, observações, garantia e custo estimado de mão de obra. Clique em **Salvar alterações da OS**. Registro de alterações com data; OS concluída/cancelada é somente leitura. Alteração de preço, quantidade de peças ou serviço já aprovado exige novo orçamento para não desalinhar estoque e cobranças.
+- **Financeiro:** nova aba **Financeiro** com contas a pagar/receber, vencimento, status, pagamentos em parcelas até o saldo e baixa nos lançamentos do Caixa. OS concluídas podem ser recebidas em parcelas, reaproveitando o saldo de OS já existente; não há cobrança duplicada.
+- **Estoque avançado:** encomendar peças do fornecedor, lista de compras pendentes, recebimento único por encomenda, custo médio ponderado, localização física, alertas de nível mínimo e margem unitária estimada. Encomendar não aumenta estoque nem gera despesa; o recebimento aumenta apenas uma vez. Registre a obrigação financeira à parte, quando houver pagamento ao fornecedor.
+- **Aceite de orçamento:** botão na OS gera PDF comercial para enviar pelo WhatsApp manualmente ou imprimir e obter assinatura. Registre nome, canal e referência **real** da aprovação; somente então habilita Aprovar e abrir OS. O registro comprova uma declaração do operador e NÃO verifica assinatura eletrônica remotamente. Não existe link de aprovação remoto neste aplicativo offline.
+- **Painel gerencial:** dentro da área protegida pelo Ctrl+A e senha, indicadores por período de recebimentos, despesas, OS, saldos, contas pendentes, estoque baixo, produtos mais vendidos, produtividade e margens brutas estimadas por OS; exportação HTML para impressão.
+- **Interpretação financeira:** margens de OS usam custos ATUAIS das peças e custo de mão de obra declarado; não incluem impostos, aluguel, encargos nem custo histórico ausente, portanto **não são lucro líquido auditado**. O sistema permanece não fiscal. Backup recomendado: \`%LOCALAPPDATA%\PDVWordMecanica\` antes de instalar atualizações.
