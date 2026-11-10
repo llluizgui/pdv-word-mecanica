@@ -77,7 +77,9 @@ jobs:
         run: |
           python -m nuitka --mode=standalone --enable-plugin=tk-inter --windows-console-mode=disable --assume-yes-for-downloads --output-dir=build --output-filename=PDVWordMecanica.exe --jobs=3 --lto=no app.py
           if ($LASTEXITCODE -ne 0) { throw 'Compilacao nativa Nuitka falhou.' }
-          if (-not (Test-Path 'build/PDVWordMecanica.dist/PDVWordMecanica.exe')) { throw 'EXE nativo nao foi gerado.' }
+          if (-not (Test-Path 'build/app.dist/PDVWordMecanica.exe')) { throw 'EXE nativo nao foi gerado.' }
+          Rename-Item -Path 'build/app.dist' -NewName 'PDVWordMecanica.dist'
+          if (-not (Test-Path 'build/PDVWordMecanica.dist/PDVWordMecanica.exe')) { throw 'Pasta da aplicacao nao encontrada.' }
           $file = (Resolve-Path 'build/PDVWordMecanica.dist/PDVWordMecanica.exe').Path
           $p = Start-Process -FilePath $file -PassThru
           Start-Sleep -Seconds 6
