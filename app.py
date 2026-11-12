@@ -16,7 +16,7 @@ import urllib.parse
 from base_app import App as BaseApp, connect, init_db, DB, brl, money_to_cents
 from office_flow import migrate, decide_quote, order_balance, report_data, search_cash, payment, APPROVED, REJECTED, PENDING
 
-APP_VERSION='1.9.7 - Avaliação operacional'
+APP_VERSION='1.9.8 - Estoque editável'
 
 def extra_db():
     with connect() as con:
@@ -1055,7 +1055,11 @@ class AppV195(WorkspaceV195, AppV18):
 from ux_v196 import WorkspaceV196
 class AppV196(WorkspaceV196, AppV18):
     pass
-App = AppV196
+
+from ux_v198 import WorkspaceV198
+class AppV198(WorkspaceV198, AppV18):
+    pass
+App = AppV198
 
 if __name__=='__main__':
     init_db();extra_db();App().mainloop()
