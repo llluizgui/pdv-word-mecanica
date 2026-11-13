@@ -58,7 +58,7 @@ def checkout(con, cid, osid, cart, discount, method, notes='', cash_received=Non
     """
     if not cid or not method or discount < 0:
         raise ValueError('Selecione um cliente cadastrado, forma de pagamento e desconto válido.')
-    con.execute('BEGIN IMMEDIATE')
+    if not con.in_transaction: con.execute('BEGIN IMMEDIATE')
     if not con.execute('SELECT id FROM clientes WHERE id=?',(cid,)).fetchone():
         raise ValueError('Cliente não encontrado.')
     due=0
@@ -143,8 +143,9 @@ def checkout_document(con, fid):
                             coalesce(v.modelo,''),coalesce(v.placa,'')
                 FROM ordens o JOIN veiculos v ON v.id=o.veiculo_id WHERE o.id=?''',(row[4],)).fetchone()
     extra=con.execute('SELECT valor_entregue,troco FROM fechamentos_v18 WHERE id=?',(fid,)).fetchone()
+    discount=con.execute('SELECT desconto FROM vendas_balcao WHERE id=?',(row[6],)).fetchone()[0] if row[6] else 0
     return {'row':row,'service':service,'extras':sale,'items':items,'order':order,
-            'cash_received':extra[0],'change':extra[1]}
+            'cash_received':extra[0],'change':extra[1],'discount':discount}
 
 
 def _plain_styles():
@@ -241,13 +242,18 @@ def compact_receipt_pdf(target,profile,receipt):
     from reportlab.lib import colors
     styles=_plain_styles()
     row=receipt['row'];osrow=receipt['order']
+    try:
+        when=dt.datetime.fromisoformat(str(row[1])).strftime('%d/%m/%Y %H:%M:%S')
+    except (TypeError, ValueError):
+        when=str(row[1])
+    quick_sale=bool(row[6] and not row[4])
     story=[_p((profile.get('name') or 'Oficina não configurada').upper(),styles['Shop']),
            _p('CNPJ/CPF: '+(profile.get('document') or '-'),styles['Small']),
            _p('Endereço: '+(' '.join([profile.get('address',''),profile.get('city','')]).strip() or '-'),styles['Small']),
            _p('Contato: '+(profile.get('phone') or '-'),styles['Small']),Spacer(1,5*mm),
            HRFlowable(width='100%',thickness=.6,color=colors.HexColor('#A9B0B7')),
-           _p('RECIBO DE PAGAMENTO',styles['ReceiptTitle']),
-           _p(f'Nº {row[0]:06d}    |    Data: {row[1][:10]}',styles['Text9']),
+           _p('COMPROVANTE DE VENDA RÁPIDA' if quick_sale else 'RECIBO DE PAGAMENTO',styles['ReceiptTitle']),
+           _p(f'Nº {row[0]:06d}  |  Data/hora: {when}',styles['Text9']),
            _p('Cliente: '+row[7],styles['Text9']),_p('CPF/CNPJ: '+row[8],styles['Small'])]
     if row[4] and osrow:
         story.extend([_p(f'OS #{row[4]:06d} | Orçamento #{osrow[0]:06d}',styles['Text9']),
@@ -256,9 +262,11 @@ def compact_receipt_pdf(target,profile,receipt):
     if receipt['service']:
         story.append(_p('Serviço / saldo da OS: '+brl(receipt['service']),styles['Text9']))
     if receipt['extras']:
-        story.append(_p('Produtos extras: '+brl(receipt['extras']),styles['Text9']))
+        story.append(_p(('Produtos do estoque: ' if quick_sale else 'Produtos extras: ')+brl(receipt['extras']),styles['Text9']))
         for name,qty,unit in receipt['items']:
             story.append(_p(f'  {name}  × {qty:g}  —  {brl(round(qty*unit))}',styles['Small']))
+    if receipt.get('discount',0):
+        story.append(_p('Desconto concedido: '+brl(receipt['discount']),styles['Text9']))
     story.extend([HRFlowable(width='100%',thickness=.6,color=colors.HexColor('#A9B0B7'),spaceBefore=6,spaceAfter=5),
                   _p('TOTAL DA VENDA / SERVIÇO: '+brl(row[3]),styles['ReceiptTotal'])])
     if row[2].strip().casefold()=='dinheiro' and receipt.get('cash_received'):
