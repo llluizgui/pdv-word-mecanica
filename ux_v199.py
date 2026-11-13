@@ -88,8 +88,6 @@ def create_quick_checkout(con, name, document, cart, discount, method,
     total = sum(round(row['qty'] * row['unit']) for row in normalized) - discount
     if total <= 0:
         raise ValueError('O total da venda precisa ser maior que zero.')
-    if discount > total + discount:
-        raise ValueError('Desconto superior ao subtotal.')
     if method == 'Dinheiro':
         if not isinstance(received, int) or received < total:
             raise ValueError(f'Valor recebido insuficiente. Total: {brl(total)}.')
@@ -162,8 +160,7 @@ class WorkspaceV199(WorkspaceV198):
         self.quick_product = ttk.Combobox(products, state='normal')
         self.quick_product.pack(fill='x', pady=(4, 7))
         self.quick_product.bind('<KeyRelease>', self._quick_filter_products)
-        self.quick_product.bind('<Return>',
-                                lambda event: self.alert(self._quick_add_product))
+        self.quick_product.bind('<Return>', self._quick_product_enter)
         self.quick_product_map = {}
         line = ttk.Frame(products)
         line.pack(fill='x')
@@ -254,6 +251,22 @@ class WorkspaceV199(WorkspaceV198):
                    command=self._reset_quick_sale).grid(
                        row=1, column=0, columnspan=2, sticky='ew', pady=4)
         self._quick_summary()
+
+    def _quick_product_enter(self, event=None):
+        """Enter digitado adiciona; Enter do bipador fica com o scanner global."""
+        if event is not None:
+            now = float(getattr(event, 'time', 0) or 0)
+            ignored = getattr(self, '_scanner_ignore_widget', None)
+            ignored_at = getattr(self, '_scanner_ignore_return', -999999)
+            if ignored == event.widget and now - ignored_at < 1000:
+                self._scanner_ignore_widget = None
+                return 'break'
+            recent = getattr(self, '_scanner_last', 0)
+            typed = getattr(self, '_scanner_chars', '')
+            if len(typed) >= 6 and 0 <= now - recent <= 280:
+                return None
+        self.alert(self._quick_add_product)
+        return 'break'
 
     def _active_commercial_page(self):
         if (hasattr(self, 'quick_tab') and hasattr(self, 'tabs')
