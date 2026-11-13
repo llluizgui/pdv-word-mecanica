@@ -35,12 +35,12 @@ with connect() as con:
     install(con)
     migrate_checkout(con)
     p1=con.execute(
-        """INSERT INTO pecas(sku,nome,quantidade,preco,categoria)
-           VALUES('7891112223334','Filtro de ar',5,2350,'Peça')"""
+        """INSERT INTO pecas(sku,nome,quantidade,preco)
+           VALUES('7891112223334','Filtro de ar',5,2350)"""
     ).lastrowid
     p2=con.execute(
-        """INSERT INTO pecas(sku,nome,quantidade,preco,categoria)
-           VALUES('7891112224445','Óleo',7,4500,'Óleo')"""
+        """INSERT INTO pecas(sku,nome,quantidade,preco)
+           VALUES('7891112224445','Óleo',7,4500)"""
     ).lastrowid
     cid=con.execute(
         """INSERT INTO clientes(nome,documento)
