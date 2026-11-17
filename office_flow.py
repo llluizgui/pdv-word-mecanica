@@ -171,7 +171,10 @@ def report_data(con, start, end):
     rows.sort(key=lambda x:(x[0],x[1],x[2]),reverse=True)
     amounts={}
     for day,origin,num,description,method,value in rows:
-        amounts[method]=amounts.get(method,0)+value
+        from core_v110 import exists
+        split=con.execute('SELECT metodo,valor FROM rateio_v110 WHERE origem=? AND origem_id=?',(origin,num)).fetchall() if exists(con,'rateio_v110') else []
+        for name,amount in split or [(method,value)]:
+            amounts[name]=amounts.get(name,0)+amount
     # Estoque/OS da oficina pode ser aprovado em outro período; usa saldo atual separado.
     due=con.execute('''SELECT coalesce(sum(max(0,o.valor-coalesce((SELECT sum(p.valor) FROM pagamentos p
         WHERE p.ordem_id=o.id AND p.tipo='Entrada'),0))),0) FROM ordens o WHERE o.status != 'Cancelada' ''').fetchone()[0]

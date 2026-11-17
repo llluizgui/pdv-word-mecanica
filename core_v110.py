@@ -28,6 +28,9 @@ def install(con):
     CREATE TABLE IF NOT EXISTS pagamentos_mistos_v110(
       fechamento_id INTEGER REFERENCES fechamentos_v18(id), metodo TEXT, valor INTEGER NOT NULL,
       PRIMARY KEY(fechamento_id,metodo));
+    CREATE TABLE IF NOT EXISTS rateio_v110(
+      origem TEXT, origem_id INTEGER, metodo TEXT, valor INTEGER NOT NULL,
+      PRIMARY KEY(origem,origem_id,metodo));
     CREATE TRIGGER IF NOT EXISTS custo_venda_v110 AFTER INSERT ON vendas_balcao_itens
     WHEN NEW.peca_id IS NOT NULL BEGIN
       INSERT INTO vendas_custos_v110(item_id,custo)
@@ -97,6 +100,8 @@ def reverse_sale(con, sid, reason, user):
             con.execute("INSERT INTO movimentacoes(peca_id,tipo,quantidade,observacoes) VALUES(?,'Devolução venda',?,?)",(pid,qty,f'Estorno #{sid}: {reason}'))
     pay=con.execute("INSERT INTO pagamentos(data,descricao,metodo,valor,tipo) VALUES(?,?,?,?,'Saída')",
                     (dt.date.today().isoformat(),f'Estorno venda #{sid}: {reason}',row[1],row[0])).lastrowid
+    for method,amount in con.execute("SELECT metodo,valor FROM rateio_v110 WHERE origem='Balcão' AND origem_id=?",(sid,)).fetchall():
+        con.execute("INSERT INTO rateio_v110 VALUES('Despesa',?,?,?)",(pay,method,-amount))
     con.execute('INSERT INTO estornos_v110 VALUES(?,?,?,?,?)',(sid,dt.datetime.now().isoformat(timespec='seconds'),reason,pay,user))
     audit(con,user,'Estornar venda',f'#{sid}: {reason}')
 

@@ -298,7 +298,12 @@ class App(BaseApp):
             osid=row.lastrowid
             for pid,qty in amounts.items():
                 con.execute('UPDATE pecas SET quantidade=quantidade-? WHERE id=?',(qty,pid))
-                con.execute('INSERT INTO movimentacoes(peca_id,tipo,quantidade,ordem_id) VALUES(?,?,?,?)',(pid,'Saída OS',qty,osid))
+                from core_v110 import exists
+                if exists(con,'reservas_v110'):
+                    cost=con.execute('SELECT custo FROM pecas WHERE id=?',(pid,)).fetchone()[0]
+                    con.execute('INSERT INTO reservas_v110(os_id,peca_id,quantidade,custo) VALUES(?,?,?,?)',(osid,pid,qty,cost))
+                else:
+                    con.execute('INSERT INTO movimentacoes(peca_id,tipo,quantidade,ordem_id) VALUES(?,?,?,?)',(pid,'Saída OS',qty,osid))
             con.execute("UPDATE orcamentos SET status='Convertido em OS' WHERE id=?",(qid,))
         self.refresh_extended();messagebox.showinfo('OS criada',f'Ordem de serviço #{osid:06d} criada e estoque registrado.')
 

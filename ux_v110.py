@@ -98,7 +98,18 @@ class WorkspaceV110(WorkspaceV1910):
                 permitted=not(self.user110 and self.user110[2]=='Mecânico' and key in ('Caixa','Financeiro'))
                 if key=='Financeiro' and not self._admin110(): permitted=False
                 button.configure(state='normal' if permitted else 'disabled')
+        if hasattr(self,'purchase_tree') and not self._admin110():
+            pages=self.purchase_tree.master.master.master
+            if isinstance(pages,ttk.Notebook):
+                pages.hide(self.purchase_tree.master.master)
+        if hasattr(self,'os_labor_cost') and not self._admin110():
+            for child in self._os_details_panel.winfo_children():
+                if isinstance(child,ttk.Entry) and str(child.cget('textvariable'))==str(self.os_labor_cost):
+                    child.grid_remove()
+                if isinstance(child,ttk.Label) and 'Custo da mão de obra' in str(child.cget('text')):
+                    child.grid_remove()
         self._refresh_stock_valuation()
+        self._sync_os_actions()
 
     def add_module_navigation(self):
         super().add_module_navigation()
@@ -151,6 +162,22 @@ class WorkspaceV110(WorkspaceV1910):
                     self.nb.select(self.tabs['Atendimento'])
                     return
         return super().on_tab_changed(event)
+
+    def refresh_dashboard(self):
+        data=super().refresh_dashboard()
+        if not self._ready110:return data
+        with connect() as con:
+            sales=con.execute("""SELECT v.id,v.total,count(i.id),count(c.item_id),coalesce(sum(i.quantidade*c.custo),0)
+                FROM vendas_balcao v JOIN vendas_balcao_itens i ON v.id=i.venda_id
+                LEFT JOIN vendas_custos_v110 c ON c.item_id=i.id
+                LEFT JOIN estornos_v110 e ON e.venda_id=v.id
+                WHERE substr(v.data,1,10) BETWEEN ? AND ? AND e.venda_id IS NULL GROUP BY v.id""",
+                (self.report_start.get(),self.report_end.get())).fetchall()
+        known=[r for r in sales if r[2]==r[3]]
+        margin=sum(r[1]-round(r[4]) for r in known)
+        self.management_details.configure(text=self.management_details.cget('text')+
+            f'\\nMargem bruta de vendas com custo registrado: {brl(margin)} ({len(known)} de {len(sales)} vendas). Sem despesas indiretas.')
+        return data
 
     def make_admin(self):
         super().make_admin()
@@ -291,6 +318,7 @@ class WorkspaceV110(WorkspaceV1910):
     def make_inventory(self):
         super().make_inventory()
         self.stock_tree.heading('Qtd',text='Disponível')
+        self.quick_reserved_note = None
         panel=self.stock_value_labels['cost'].master.master.master
         self.reserve110_note=ttk.Label(panel,text='',style='CardMuted.TLabel')
         self.reserve110_note.grid(row=2,column=0,columnspan=2,sticky='w',pady=4)
@@ -339,6 +367,10 @@ class WorkspaceV110(WorkspaceV1910):
         self._require110(admin=True);return super().save_account()
     def pay_account(self):
         self._require110(admin=True);return super().pay_account()
+    def save_payment(self):
+        self._require110(sales=True);return super().save_payment()
+    def _save_misc_income(self):
+        self._require110(admin=True);return super()._save_misc_income()
     def pay_order_installment(self):
         self._require110(sales=True);return super().pay_order_installment()
     def save_order_details(self):
@@ -393,8 +425,22 @@ class WorkspaceV110(WorkspaceV1910):
         label='Misto: '+', '.join(k+' '+brl(v) for k,v in parts.items())
         for k,v in parts.items():con.execute('INSERT INTO pagamentos_mistos_v110 VALUES(?,?,?)',(result['id'],k,v))
         con.execute('UPDATE fechamentos_v18 SET metodo=? WHERE id=?',(label,result['id']))
-        for table,key in (('pagamentos','payment_id'),('vendas_balcao','sale_id')):
-            if result[key]:con.execute(f'UPDATE {table} SET metodo=? WHERE id=?',(label,result[key]))
+        remaining=dict(parts)
+        # Aloca primeiro o serviço e depois os extras, sem duplicar recebimentos.
+        for table,key,origin,total in (('pagamentos','payment_id','OS / Caixa',result['service']),
+                                       ('vendas_balcao','sale_id','Balcão',result['products'])):
+            if not result[key]:continue
+            allocated={}
+            for method in remaining:
+                amount=min(total,remaining[method])
+                if amount:
+                    allocated[method]=amount
+                    remaining[method]-=amount
+                    total-=amount
+                    con.execute('INSERT INTO rateio_v110 VALUES(?,?,?,?)',(origin,result[key],method,amount))
+            desc='Misto: '+', '.join(k+' '+brl(v) for k,v in allocated.items()) if len(allocated)>1 else next(iter(allocated))
+            con.execute(f'UPDATE {table} SET metodo=? WHERE id=?',(desc,result[key]))
+        if any(remaining.values()):raise ValueError('Rateio incorreto.')
 
     def finish_quick_sale(self):
         self._require110(sales=True)
