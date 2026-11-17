@@ -27,6 +27,13 @@ def stock_valuation(con):
         sale += quantity * Decimal(str(unit_sale or 0))
         if not unit_cost or unit_cost <= 0:
             missing += 1
+    from core_v110 import exists
+    if exists(con,'reservas_v110'):
+        for qty, c, p in con.execute("""SELECT r.quantidade,r.custo,p.preco FROM reservas_v110 r
+            JOIN pecas p ON p.id=r.peca_id WHERE r.estado='Reservada'"""):
+            cost += Decimal(str(qty))*Decimal(str(c))
+            sale += Decimal(str(qty))*Decimal(str(p))
+            if not c: missing += 1
     return (int(cost.quantize(Decimal('1'), rounding=ROUND_HALF_UP)),
             int(sale.quantize(Decimal('1'), rounding=ROUND_HALF_UP)), missing)
 

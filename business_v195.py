@@ -140,6 +140,10 @@ def receive_order(con,purchase_id):
     con.execute('UPDATE encomendas_v195 SET status=? WHERE id=?',('Recebido',purchase_id))
     con.execute("""INSERT INTO movimentacoes(peca_id,tipo,quantidade,observacoes)
                    VALUES(?,'Entrada',?,?)""",(pid,qty,f'Encomenda #{purchase_id} / {provider}'))
+    from core_v110 import exists, cent
+    if exists(con,'compras_contas_v110') and cent(qty,cost)>0:
+        account=create_account(con,'Pagar',f'Compra #{purchase_id} - {provider}',cent(qty,cost),dt.date.today().isoformat())
+        con.execute('INSERT INTO compras_contas_v110 VALUES(?,?)',(purchase_id,account))
     return new_qty,average
 
 
@@ -192,6 +196,10 @@ def dashboard(con,start,end):
         part_cost=con.execute("""SELECT coalesce(sum(i.quantidade*p.custo),0)
                 FROM orcamento_itens i JOIN ordens o ON o.orcamento_id=i.orcamento_id
                 JOIN pecas p ON p.id=i.peca_id WHERE o.id=? AND i.tipo='Peça'""",(oid,)).fetchone()[0]
+        from core_v110 import exists
+        if exists(con,'reservas_v110'):
+            saved=con.execute("SELECT count(*),coalesce(sum(quantidade*custo),0) FROM reservas_v110 WHERE os_id=? AND estado='Consumida'",(oid,)).fetchone()
+            if saved[0]: part_cost=saved[1]
         margins.append((oid,client,total,int(part_cost or 0),labor,total-int(part_cost or 0)-labor))
     obligations=con.execute("""SELECT tipo,coalesce(sum(valor-pago),0) FROM contas_v195
           WHERE valor>pago GROUP BY tipo""").fetchall()

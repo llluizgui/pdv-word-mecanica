@@ -85,10 +85,17 @@ def decide_quote(con, quote_id, decision, mechanic_id=None, notes=''):
     osid=con.execute('''INSERT INTO ordens(orcamento_id,cliente_id,veiculo_id,profissional_id,abertura,
             problema,status,valor,observacoes) VALUES(?,?,?,?,?,?,?,?,?)''',
             (quote_id,q[0],q[1],mechanic_id,day,q[3],'Aberta',total,notes.strip())).lastrowid
+    from core_v110 import exists
+    reserve=exists(con,'reservas_v110')
     for part_id,qty in amounts.items():
         con.execute('UPDATE pecas SET quantidade=quantidade-? WHERE id=?',(float(qty),part_id))
-        con.execute('INSERT INTO movimentacoes(peca_id,tipo,quantidade,ordem_id,observacoes) VALUES(?,?,?,?,?)',
-                    (part_id,'Saída OS',float(qty),osid,'Peça vinculada à OS aprovada'))
+        if reserve:
+            cost=con.execute('SELECT custo FROM pecas WHERE id=?',(part_id,)).fetchone()[0]
+            con.execute('INSERT INTO reservas_v110(os_id,peca_id,quantidade,custo) VALUES(?,?,?,?)',
+                        (osid,part_id,float(qty),cost))
+        else:
+            con.execute('INSERT INTO movimentacoes(peca_id,tipo,quantidade,ordem_id,observacoes) VALUES(?,?,?,?,?)',
+                        (part_id,'Saída OS',float(qty),osid,'Peça vinculada à OS aprovada'))
     con.execute('UPDATE orcamentos SET status=? WHERE id=?',(APPROVED,quote_id))
     con.execute('INSERT INTO orcamento_decisoes(orcamento_id,data,decisao,observacao) VALUES(?,?,?,?)',
                 (quote_id,dt.datetime.now().isoformat(timespec='seconds'),APPROVED,notes.strip()))

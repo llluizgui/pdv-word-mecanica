@@ -237,7 +237,7 @@ class WorkshopFlowV17:
             with connect() as con:
                 doc=order_documents(con,oid)
             if doc['order'][4]=='Cancelada':raise ValueError('Não é possível concluir uma OS cancelada.')
-            if not doc['photos']:
+            if not doc['photos'] and getattr(self,'require_os_photo',True):
                 messagebox.showwarning('Fotos da moto/carro',
                     'Registre ao menos uma foto de entrada ou saída no Checklist, vinculada a esta OS, antes de concluir.')
                 self._open_checklist_for(oid)

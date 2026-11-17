@@ -16,7 +16,7 @@ import urllib.parse
 from base_app import App as BaseApp, connect, init_db, DB, brl, money_to_cents
 from office_flow import migrate, decide_quote, order_balance, report_data, search_cash, payment, APPROVED, REJECTED, PENDING
 
-APP_VERSION='1.9.11 - Relatórios e valor do estoque'
+APP_VERSION='1.10.0 - Gestão integrada'
 
 def extra_db():
     with connect() as con:
@@ -250,7 +250,7 @@ class App(BaseApp):
         if row[0]!=PENDING:raise ValueError('Este orçamento não está mais aguardando aprovação.')
         prompt=(f'Orçamento #{qid:06d} — {row[1]} / {row[2]}\n'
                 f'{row[3]}\n\n'
-                +('Confirma que o cliente aprovou este orçamento? A OS será criada e peças do estoque serão baixadas.'
+                +('Confirma que o cliente aprovou este orçamento? A OS será criada e as peças ficarão reservadas.'
                   if status==APPROVED else 'Confirma que este orçamento foi rejeitado?'))
         if not messagebox.askyesno('Confirmação de orçamento',prompt):return
         with connect() as con:
@@ -1067,7 +1067,10 @@ class AppV199(WorkspaceV199, AppV18):
 from ux_v1910 import WorkspaceV1910
 class AppV1910(WorkspaceV1910, AppV18):
     pass
-App = AppV1910
+from ux_v110 import WorkspaceV110
+class AppV110(WorkspaceV110, AppV18):
+    pass
+App = AppV110
 
 if __name__=='__main__':
     init_db();extra_db();App().mainloop()

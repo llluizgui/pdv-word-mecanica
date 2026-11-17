@@ -38,8 +38,7 @@ def create_quick_checkout(con, name, document, cart, discount, method,
     aqui ela começa antes do cadastro para não deixar cliente órfão em falhas.
     """
     name = str(name or '').strip()
-    if not name:
-        raise ValueError('Informe o nome ou razão social do comprador.')
+    name = name or 'Consumidor final'
     doc = document_digits(document)
     if method not in PAYMENTS:
         raise ValueError('Selecione uma forma de pagamento válida.')
@@ -58,6 +57,13 @@ def create_quick_checkout(con, name, document, cart, discount, method,
     if existing:
         cid = existing[0]
         customer_name = existing[1]
+    elif not doc and name == 'Consumidor final':
+        from core_v110 import exists, consumer
+        if exists(con,'consumidor_v110'):
+            cid=consumer(con)
+        else:
+            cid=con.execute('INSERT INTO clientes(nome) VALUES(?)',(name,)).lastrowid
+        customer_name=name
     else:
         cid = con.execute(
             'INSERT INTO clientes(nome,documento) VALUES(?,?)',
@@ -141,7 +147,7 @@ class WorkspaceV199(WorkspaceV198):
         self.quick_name = tk.StringVar()
         self.quick_doc = tk.StringVar()
         for i, (label, var) in enumerate(
-            [('Nome completo / Razão social *', self.quick_name),
+            [('Nome / Razão social (opcional)', self.quick_name),
              ('CPF ou CNPJ (opcional)', self.quick_doc)]):
             field = ttk.Frame(person)
             field.grid(row=0, column=i, sticky='ew', padx=(0, 9))
@@ -150,7 +156,7 @@ class WorkspaceV199(WorkspaceV198):
             person.columnconfigure(i, weight=1, uniform='client')
         ttk.Label(person,
                   text='Documento já cadastrado reutiliza o cliente existente; '
-                       'sem documento, cadastra pelo nome informado.',
+                       'sem nome, usa Consumidor final.',
                   foreground='#64748B').grid(row=1, column=0, columnspan=2,
                                             sticky='w', pady=(7, 0))
 
@@ -453,8 +459,7 @@ class WorkspaceV199(WorkspaceV198):
             raise ValueError('Adicione produtos válidos ao carrinho.')
         name = self.quick_name.get().strip()
         doc = self.quick_doc.get().strip()
-        if not name:
-            raise ValueError('Informe o nome do comprador.')
+        name = name or 'Consumidor final'
         document_digits(doc)
         delivered = None
         if method == 'Dinheiro':
