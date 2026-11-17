@@ -132,7 +132,7 @@ class WorkspaceV110(WorkspaceV1910):
             for btn in self._nav_buttons.values():btn.configure(padx=8,pady=8,font=('Segoe UI',9))
         if hasattr(self,'_os_action_buttons'):
             bar=self._os_action_buttons['approve'].master
-            bar.bind('<Configure>',lambda e:self._report_reflow(bar,4 if e.width>=720 else 2),add='+')
+            self._report_reflow(bar,3)
         if hasattr(self,'quick_tab'):
             for canvas in self.quick_tab.winfo_children():
                 if isinstance(canvas,tk.Canvas):
@@ -142,7 +142,7 @@ class WorkspaceV110(WorkspaceV1910):
                     windows=[x for x in canvas.find_all() if canvas.type(x)=='window']
                     if windows:
                         iid=windows[0]; inside=canvas.nametowidget(canvas.itemcget(iid,'window'))
-                        canvas.bind('<Configure>',lambda e,c=canvas,i=iid,w=inside:c.itemconfigure(i,width=max(e.width,w.winfo_reqwidth())))
+                        canvas.bind('<Configure>',lambda e,c=canvas,i=iid,w=inside:c.itemconfigure(i,width=max(e.width,880)))
         if hasattr(self,'os_tree') and not self.os_tree.cget('xscrollcommand'):
             bar=ttk.Scrollbar(self.os_tree.master,orient='horizontal',command=self.os_tree.xview)
             bar.grid(row=1,column=0,sticky='ew')

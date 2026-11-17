@@ -92,7 +92,7 @@ class App(tk.Tk):
         def resized(event):
             canvas.configure(scrollregion=canvas.bbox('all'))
         def viewport(event):
-            canvas.itemconfigure(window, width=max(event.width, inside.winfo_reqwidth()))
+            canvas.itemconfigure(window, width=max(event.width, 880))
             canvas.configure(scrollregion=canvas.bbox('all'))
         inside.bind('<Configure>', resized)
         canvas.bind('<Configure>', viewport)

@@ -39,6 +39,10 @@ on:
       - .github/workflows/instalador-windows.yml
   workflow_dispatch:
 
+concurrency:
+  group: pdv-windows-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -46,6 +50,7 @@ jobs:
   compilar:
     name: Verificar, testar e gerar Setup Windows 1.10.0
     runs-on: windows-2022
+    timeout-minutes: 60
     steps:
       - name: Obter codigo do repositorio
         uses: actions/checkout@v4
@@ -64,35 +69,89 @@ jobs:
           python -m py_compile app.py base_app.py office_flow.py ui_v14.py ui_v15.py ui_v16.py workflow_v17.py workflow_v18.py test_flow.py test_v18.py ux_v19.py ux_v192.py ux_v193.py ux_v194.py ux_v195.py ux_v196.py ux_v198.py ux_v199.py ux_v1910.py os_documents_v196.py business_v195.py test_v19.py test_v193.py test_v194.py test_v195.py test_v196.py test_v198.py test_v199.py test_v1910.py test_v1911.py core_v110.py ux_v110.py test_v110.py
           if ($LASTEXITCODE -ne 0) { throw 'Erro de sintaxe.' }
 
-      - name: Testar atendimento, troco, recibo A5, estoque e vendas
+      - name: Testar test_flow.py
+        timeout-minutes: 3
         shell: pwsh
         run: |
-          python test_flow.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste de fluxo basico falhou.' }
-          python test_v18.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste integrado 1.8 falhou. Nao publicar.' }
-          python test_v19.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste de regressao 1.9 falhou. Nao publicar.' }
-          python test_v193.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste de caixa compacto e scanner falhou. Nao publicar.' }
-          python test_v194.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste da OS semanal e busca falhou. Nao publicar.' }
-          python test_v195.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste das 5 novas funcionalidades falhou. Nao publicar.' }
-          python test_v196.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste de PDF, impressao e WhatsApp da OS falhou. Nao publicar.' }
-          python test_v198.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste de edicao do estoque e orcamentos falhou. Nao publicar.' }
-          python test_v199.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste de venda rapida, baixa, troco e recibo falhou. Nao publicar.' }
-          python test_v1910.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste do estoque visivel e atualizado no caixa falhou. Nao publicar.' }
+          python -u -X faulthandler test_flow.py
+          if ($LASTEXITCODE -ne 0) { throw 'Falhou test_flow.py. Nao publicar.' }
 
-          python test_v1911.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste de estoque e relatorios 1.10.0 falhou.' }
+      - name: Testar test_v18.py
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python -u -X faulthandler test_v18.py
+          if ($LASTEXITCODE -ne 0) { throw 'Falhou test_v18.py. Nao publicar.' }
 
-          python test_v110.py
-          if ($LASTEXITCODE -ne 0) { throw 'Teste 1.10 falhou.' }
+      - name: Testar test_v19.py
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python -u -X faulthandler test_v19.py
+          if ($LASTEXITCODE -ne 0) { throw 'Falhou test_v19.py. Nao publicar.' }
+
+      - name: Testar test_v193.py
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python -u -X faulthandler test_v193.py
+          if ($LASTEXITCODE -ne 0) { throw 'Falhou test_v193.py. Nao publicar.' }
+
+      - name: Testar test_v194.py
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python -u -X faulthandler test_v194.py
+          if ($LASTEXITCODE -ne 0) { throw 'Falhou test_v194.py. Nao publicar.' }
+
+      - name: Testar test_v195.py
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python -u -X faulthandler test_v195.py
+          if ($LASTEXITCODE -ne 0) { throw 'Falhou test_v195.py. Nao publicar.' }
+
+      - name: Testar test_v196.py
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python -u -X faulthandler test_v196.py
+          if ($LASTEXITCODE -ne 0) { throw 'Falhou test_v196.py. Nao publicar.' }
+
+      - name: Testar test_v198.py
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python -u -X faulthandler test_v198.py
+          if ($LASTEXITCODE -ne 0) { throw 'Falhou test_v198.py. Nao publicar.' }
+
+      - name: Testar test_v199.py
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python -u -X faulthandler test_v199.py
+          if ($LASTEXITCODE -ne 0) { throw 'Falhou test_v199.py. Nao publicar.' }
+
+      - name: Testar test_v1910.py
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python -u -X faulthandler test_v1910.py
+          if ($LASTEXITCODE -ne 0) { throw 'Falhou test_v1910.py. Nao publicar.' }
+
+      - name: Testar test_v1911.py
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python -u -X faulthandler test_v1911.py
+          if ($LASTEXITCODE -ne 0) { throw 'Falhou test_v1911.py. Nao publicar.' }
+
+      - name: Testar test_v110.py
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python -u -X faulthandler test_v110.py
+          if ($LASTEXITCODE -ne 0) { throw 'Falhou test_v110.py. Nao publicar.' }
 
       - name: Compilar aplicativo com Nuitka (binario nativo, sem bootloader PyInstaller)
         shell: pwsh
