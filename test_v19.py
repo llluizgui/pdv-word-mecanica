@@ -35,6 +35,14 @@ print('PASSOU: cálculos legados e novos, localização e filtro por mês/ano/st
 # Regressão visual: todas as partes da ficha devem existir no mesmo painel rolável,
 # sem Notebook aninhado que escondia veículo/orçamento nas telas do cliente.
 from app import App
+import faulthandler
+faulthandler.dump_traceback_later(45, repeat=True)
+from tkinter import messagebox
+def unexpected_dialog(*a, **k):
+    raise AssertionError('Janela inesperada no teste: '+repr(a))
+messagebox.showwarning=unexpected_dialog
+messagebox.showerror=unexpected_dialog
+messagebox.showinfo=unexpected_dialog
 win = App()
 win.withdraw()
 win.update_idletasks()
@@ -118,4 +126,5 @@ assert win.description.get()=='Revisar freios'
 with connect() as con:
     assert con.execute('SELECT status FROM agendamentos WHERE id=?',(aid,)).fetchone()[0]=='Em atendimento'
 win.destroy()
+faulthandler.cancel_dump_traceback_later()
 print('PASSOU: filtros de OS, scanner sem troca de cliente, orçamento e agenda')

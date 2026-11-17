@@ -43,4 +43,11 @@ with connect() as con:
     try:reverse_sale(con,sid,'Duplicado','admin')
     except ValueError:pass
     else:raise AssertionError('Estorno duplicado')
+from ux_v110 import backup_bundle
+from zipfile import ZipFile
+from pathlib import Path
+target=backup_bundle()
+assert target.is_file()
+with ZipFile(target) as z:
+    assert 'mecanica.db' in z.namelist() and z.testzip() is None
 print('OK 1.10: reserva, cancelamento, arquivamento, compra, consumidor final, custo e estorno')

@@ -1,5 +1,7 @@
 """Interface 1.10.0; não acrescenta abertura/fechamento de caixa nem sangria."""
 import datetime as dt
+from contextlib import closing
+import logging
 import os
 import sqlite3
 import tempfile
@@ -24,7 +26,7 @@ def backup_bundle(root=None):
     try:
         with tempfile.TemporaryDirectory() as d:
             copy=Path(d)/'mecanica.db'
-            with connect() as con, sqlite3.connect(copy) as dest:
+            with closing(connect()) as con, closing(sqlite3.connect(copy)) as dest:
                 con.backup(dest)
                 if dest.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
                     raise ValueError('Backup inválido.')
@@ -63,7 +65,7 @@ class WorkspaceV110(WorkspaceV1910):
         self._apply_role110()
         self._compact110()
         self.refresh_extended()
-        self.after_idle(self._daily110)
+        self.after(1500,self._daily110)
 
     def _admin110(self):
         # Compatibilidade: sem contas cadastradas, mantém o acesso anterior.
@@ -494,7 +496,9 @@ class WorkspaceV110(WorkspaceV1910):
                 backup_bundle(root)
             for p in sorted(root.glob('PDV_*.zip'))[:-14]:p.unlink()
         except Exception as exc:
-            messagebox.showwarning('Backup automático',str(exc),parent=self)
+            logging.exception('Falha no backup automático')
+            if hasattr(self,'user110_label'):
+                self.user110_label.configure(text='Falha no backup automático — Ctrl+A')
         self.after(3600000,self._daily110)
 
     def backup(self):
@@ -526,11 +530,11 @@ class WorkspaceV110(WorkspaceV1910):
                 source=root/'mecanica.db'
             else:source=Path(path)
             if not source.is_file():raise ValueError('Banco não encontrado no backup.')
-            with sqlite3.connect(source) as src:
+            with closing(sqlite3.connect(source)) as src:
                 if src.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise ValueError('Banco inválido.')
                 names={r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 if not {'clientes','veiculos','orcamentos','ordens','pecas'}.issubset(names):raise ValueError('Backup não pertence ao PDV Mecânica.')
-                with connect() as dest:src.backup(dest)
+                with closing(connect()) as dest:src.backup(dest)
             if root.joinpath('mecanica.db').exists():
                 import shutil
                 for f in root.rglob('*'):
