@@ -17,6 +17,7 @@ from office_flow import payment, order_balance
 from workflow_v18 import checkout
 from ux_v199 import create_quick_checkout, document_digits
 from ux_v198 import qty_number
+from cash_v111 import daily, set_initial, METHODS
 
 def backup_bundle(root=None):
     root=Path(root or DB.parent/'backups_automaticos')
@@ -54,7 +55,7 @@ class WorkspaceV110(WorkspaceV1910):
             row=con.execute("SELECT valor FROM configuracoes WHERE chave='foto_os_v110'").fetchone()
             self.require_os_photo=bool(row and row[0]=='1')
             configured=con.execute('SELECT count(*) FROM usuarios_v110').fetchone()[0]
-        self.title('PDV Word Mecânica 1.10.0 | Siliro Tech')
+        self.title('PDV Word Mecânica 1.10.1 | Siliro Tech')
         self._ready110=True
         if configured:
             self.withdraw()
@@ -372,7 +373,14 @@ class WorkspaceV110(WorkspaceV1910):
     def save_payment(self):
         self._require110(sales=True);return super().save_payment()
     def _save_misc_income(self):
-        self._require110(admin=True);return super()._save_misc_income()
+        self._require110(admin=True)
+        amount=money_to_cents(self.cash_misc_value.get())
+        desc=self.cash_misc_description.get().strip()
+        if not amount or not desc:raise ValueError('Informe descrição e valor positivo.')
+        with connect() as con:
+            con.execute("INSERT INTO pagamentos(data,descricao,metodo,valor,tipo) VALUES(?,?,?,?,'Entrada')",
+                (dt.date.today().isoformat(),desc,self.misc_method111.get(),amount))
+        self.cash_misc_value.set('');self.cash_misc_description.set('');self.refresh_extended()
     def pay_order_installment(self):
         self._require110(sales=True);return super().pay_order_installment()
     def save_order_details(self):
@@ -399,6 +407,27 @@ class WorkspaceV110(WorkspaceV1910):
         self.refresh_extended()
         if self.report_granted:self.query_report()
 
+    def make_finance(self):
+        super().make_finance()
+        self.expense_method111=tk.StringVar(value='Dinheiro')
+        self.misc_method111=tk.StringVar(value='Pix')
+        # Identifica entradas e despesas reais por meio de pagamento.
+        for parent,var,title in ((self.cash_expense_tab,self.expense_method111,'Forma da despesa'),
+                                (self.cash_expense_tab,self.misc_method111,'Forma da entrada avulsa')):
+            row=ttk.Frame(parent);row.pack(fill='x',pady=3)
+            ttk.Label(row,text=title).pack(side='left')
+            ttk.Combobox(row,textvariable=var,values=METHODS[:-1],state='readonly',width=18).pack(side='left',padx=5)
+
+    def record_expense(self):
+        self._require110(sales=True)
+        amount=money_to_cents(self.expense_value.get())
+        desc=self.expense_desc.get().strip()
+        if not amount or not desc:raise ValueError('Informe descrição e valor positivo.')
+        with connect() as con:
+            con.execute("INSERT INTO pagamentos(data,descricao,metodo,valor,tipo) VALUES(?,?,?,?,'Saída')",
+                (dt.date.today().isoformat(),desc,self.expense_method111.get(),amount))
+        self.expense_desc.set('');self.expense_value.set('');self.refresh_extended()
+
     def make_retail(self):
         super().make_retail()
         # Pagamento dividido em valores exatos por método; sem abertura de caixa.
@@ -406,11 +435,435 @@ class WorkspaceV110(WorkspaceV1910):
             for c in w.winfo_children():
                 if isinstance(c,ttk.Combobox):
                     var=str(c.cget('textvariable'))
-                    if var in (str(self.quick_method),str(self.sale_payment)):
+                    if var==str(self.quick_method) or c is self.sale_payment:
                         choices=list(c.cget('values'))
                         if 'Misto' not in choices:c.configure(values=choices+['Misto'])
                 walk(c)
         walk(self.cash_notebook)
+        # Campos separados do estoque: mão de obra não altera quantidade de peças.
+        self.quick_labor111=tk.StringVar(value='0')
+        self.quick_labor_desc111=tk.StringVar(value='')
+        self.sale_labor111=tk.StringVar(value='0')
+        self.sale_labor_desc111=tk.StringVar(value='')
+        def labor_box(parent,before,amount,desc,refresh):
+            section=ttk.LabelFrame(parent,text='Mão de obra / serviço adicional (opcional)',padding=6)
+            section.pack(fill='x',before=before,pady=5)
+            ttk.Label(section,text='Descrição do serviço').grid(row=0,column=0,sticky='w')
+            ttk.Label(section,text='Valor R(self,total):
+        pix=simpledialog.askstring('Pagamento misto',f'Total {brl(total)}. Pix R$:',initialvalue='0',parent=self)
+        if pix is None:return None
+        cash=simpledialog.askstring('Pagamento misto','Dinheiro R$ (valor líquido, sem troco):',initialvalue='0',parent=self)
+        if cash is None:return None
+        debit=simpledialog.askstring('Pagamento misto','Débito R$:',initialvalue='0',parent=self)
+        if debit is None:return None
+        credit=simpledialog.askstring('Pagamento misto','Crédito R$:',initialvalue='0',parent=self)
+        if credit is None:return None
+        values={'Pix':money_to_cents(pix),'Dinheiro':money_to_cents(cash),'Cartão débito':money_to_cents(debit),'Cartão crédito':money_to_cents(credit)}
+        if sum(values.values())!=total or sum(v>0 for v in values.values())<2:raise ValueError('Informe pelo menos dois meios e a soma exata do total.')
+        return {k:v for k,v in values.items() if v}
+
+    def _save_mixed110(self,con,result,parts):
+        label='Misto: '+', '.join(k+' '+brl(v) for k,v in parts.items())
+        for k,v in parts.items():con.execute('INSERT INTO pagamentos_mistos_v110 VALUES(?,?,?)',(result['id'],k,v))
+        con.execute('UPDATE fechamentos_v18 SET metodo=? WHERE id=?',(label,result['id']))
+        remaining=dict(parts)
+        # Aloca primeiro o serviço e depois os extras, sem duplicar recebimentos.
+        for table,key,origin,total in (('pagamentos','payment_id','OS / Caixa',result['service']),
+                                       ('vendas_balcao','sale_id','Balcão',result['products'])):
+            if not result[key]:continue
+            allocated={}
+            for method in remaining:
+                amount=min(total,remaining[method])
+                if amount:
+                    allocated[method]=amount
+                    remaining[method]-=amount
+                    total-=amount
+                    con.execute('INSERT INTO rateio_v110 VALUES(?,?,?,?)',(origin,result[key],method,amount))
+            desc='Misto: '+', '.join(k+' '+brl(v) for k,v in allocated.items()) if len(allocated)>1 else next(iter(allocated))
+            con.execute(f'UPDATE {table} SET metodo=? WHERE id=?',(desc,result[key]))
+        if any(remaining.values()):raise ValueError('Rateio incorreto.')
+
+    def finish_quick_sale(self):
+        self._require110(sales=True)
+        labor=money_to_cents(self.quick_labor111.get())
+        if self.quick_method.get()!='Misto' and not labor:return super().finish_quick_sale()
+        _,discount,total=self._quick_amounts()
+        if total<=0:raise ValueError('Adicione produtos válidos.')
+        method=self.quick_method.get()
+        parts=self._mixed110(total) if method=='Misto' else None
+        if method=='Misto' and parts is None:return
+        received=money_to_cents(self.quick_received.get()) if method=='Dinheiro' else None
+        if method=='Dinheiro' and received<total:raise ValueError('Dinheiro insuficiente.')
+        if not messagebox.askyesno('Confirmar venda',f'Total {brl(total)} • Mão de obra {brl(labor)} • {method}. Confirmar recebimento?',parent=self):return
+        with connect() as con:
+            result=create_quick_checkout(con,self.quick_name.get().strip() or 'Consumidor final',self.quick_doc.get(),list(self.quick_cart),discount,'Pix' if parts else method,received=received,notes=self.quick_notes.get(),labor=labor,labor_description=self.quick_labor_desc111.get())
+            if result['total']!=total:raise ValueError('Preço alterado; confira o carrinho.')
+            if parts:self._save_mixed110(con,result,parts)
+        self.last_quick_id=self.last_checkout_id=result['id'];self.last_sale_id=result['sale_id']
+        self._reset_quick_sale();self.refresh_extended()
+        try: self.make_checkout_receipt(result['id'])
+        except Exception as exc:messagebox.showwarning('Venda salva',f'Não repita a venda. Erro no PDF: {exc}',parent=self)
+        else:messagebox.showinfo('Venda concluída',f'Pagamento registrado: {brl(total)}. Troco: {brl(result["change"])}.',parent=self)
+        return result
+
+    def finish_sale(self):
+        self._require110(sales=True)
+        labor=money_to_cents(self.sale_labor111.get())
+        if self.sale_payment.get()!='Misto' and not labor:return super().finish_sale()
+        cid=self.sale_customer_map.get(self.sale_customer.get())
+        if not cid:raise ValueError('Selecione um cliente.')
+        oid=getattr(self,'_cash_active_order',None)
+        discount=money_to_cents(self.sale_fields['desconto'].get())
+        with connect() as con:due=order_balance(con,oid)['saldo'] if oid else 0
+        total=due+sum(round(i['qty']*i['unit']) for i in self.cart)+labor-discount
+        if total<=0:raise ValueError('Não há saldo a receber.')
+        method=self.sale_payment.get()
+        parts=self._mixed110(total) if method=='Misto' else None
+        if method=='Misto' and parts is None:return
+        received=money_to_cents(self.cash_received.get()) if method=='Dinheiro' else None
+        if method=='Dinheiro' and received<total:raise ValueError('Dinheiro insuficiente.')
+        if not messagebox.askyesno('Confirmar recebimento',f'Total {brl(total)} • Mão de obra extra {brl(labor)}. Confirmar {method}?',parent=self):return
+        with connect() as con:
+            result=checkout(con,cid,oid,list(self.cart),discount,method,self.sale_fields['obs'].get(),cash_received=received,labor=labor,labor_description=self.sale_labor_desc111.get())
+            if result['total']!=total:raise ValueError('Saldo alterado; confira novamente.')
+            if parts:self._save_mixed110(con,result,parts)
+        self.sale_labor111.set('0');self.sale_labor_desc111.set('')
+        self.last_checkout_id=result['id'];self.last_sale_id=result['sale_id'];self.last_payment_id=result['payment_id']
+        self.cart.clear();self.sale_fields['desconto'].set('0');self.sale_fields['obs'].set('');self.cash_received.set('');self._pending_extra_os=None
+        self.refresh_extended();self.refresh_retail();self._checkout_client_selected()
+        try:self.make_checkout_receipt(result['id'])
+        except Exception as exc:messagebox.showwarning('Pagamento salvo',f'Não repita. Erro no PDF: {exc}',parent=self)
+        else:messagebox.showinfo('Pagamento registrado',brl(total),parent=self)
+        return result
+
+    def _daily110(self):
+        if not self.winfo_exists():return
+        try:
+            root=DB.parent/'backups_automaticos'
+            today='PDV_'+dt.date.today().isoformat()
+            if not list(root.glob(today+'*.zip')):
+                backup_bundle(root)
+            for p in sorted(root.glob('PDV_*.zip'))[:-14]:p.unlink()
+        except Exception as exc:
+            logging.exception('Falha no backup automático')
+            if hasattr(self,'user110_label'):
+                self.user110_label.configure(text='Falha no backup automático — Ctrl+A')
+        self.after(3600000,self._daily110)
+
+    def backup(self):
+        self._require110(admin=True)
+        folder=filedialog.askdirectory(parent=self,title='Pasta de destino do backup completo')
+        if folder:
+            target=backup_bundle(folder)
+            messagebox.showinfo('Backup completo',str(target),parent=self)
+
+    def restore(self):
+        self._require110(admin=True)
+        # Restauração é deliberadamente separada para evitar substituir arquivos em uso.
+        path=filedialog.askopenfilename(parent=self,filetypes=[('Backup completo ZIP','*.zip'),('Banco antigo','*.db')])
+        if not path:return
+        if not messagebox.askyesno('Restaurar','Substituir dados atuais? Uma cópia automática será feita antes. O programa será encerrado.',parent=self):return
+        backup_bundle()
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            if Path(path).suffix.lower()=='.zip':
+                with zipfile.ZipFile(path) as z:
+                    if z.testzip() is not None:raise ValueError('ZIP inválido.')
+                    for info in z.infolist():
+                        target=(root/info.filename).resolve()
+                        if not target.is_relative_to(root.resolve()):raise ValueError('Caminho inseguro no ZIP.')
+                        if info.is_dir():continue
+                        if target.name!='mecanica.db' and target.suffix.lower() not in ('.pdf','.jpg','.jpeg','.png','.webp','.bmp'):raise ValueError('Arquivo inesperado no backup.')
+                        target.parent.mkdir(parents=True,exist_ok=True)
+                        target.write_bytes(z.read(info))
+                source=root/'mecanica.db'
+            else:source=Path(path)
+            if not source.is_file():raise ValueError('Banco não encontrado no backup.')
+            with closing(sqlite3.connect(source)) as src:
+                if src.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise ValueError('Banco inválido.')
+                names={r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if not {'clientes','veiculos','orcamentos','ordens','pecas'}.issubset(names):raise ValueError('Backup não pertence ao PDV Mecânica.')
+                with closing(connect()) as dest:src.backup(dest)
+            if root.joinpath('mecanica.db').exists():
+                import shutil
+                for f in root.rglob('*'):
+                    if f.is_file() and f!=source:
+                        target=DB.parent/f.relative_to(root);target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(f,target)
+        messagebox.showinfo('Restauração','Dados restaurados. Abra o PDV novamente.',parent=self)
+        self.destroy()
+).grid(row=0,column=1,sticky='w',padx=5)
+            ttk.Entry(section,textvariable=desc,width=20).grid(row=1,column=0,sticky='ew')
+            ttk.Entry(section,textvariable=amount,width=10).grid(row=1,column=1,sticky='ew',padx=5)
+            section.columnconfigure(0,weight=1)
+            amount.trace_add('write',lambda *_:refresh())
+        labor_box(self.quick_total_label.master,self.quick_total_label,self.quick_labor111,self.quick_labor_desc111,self._quick_summary)
+        labor_box(self.sale_payment.master,self.sale_payment,self.sale_labor111,self.sale_labor_desc111,self._checkout_summary)
+        self._make_cash111()
+        self._quick_summary()
+        self._checkout_summary()
+
+    def _quick_amounts(self):
+        if not hasattr(self,'quick_labor111'):return super()._quick_amounts()
+        subtotal=sum(round(i['qty']*i['unit']) for i in self.quick_cart)+money_to_cents(self.quick_labor111.get())
+        discount=money_to_cents(self.quick_discount.get())
+        if discount>subtotal:raise ValueError('Desconto maior que subtotal.')
+        return subtotal,discount,subtotal-discount
+
+    def _quick_summary(self):
+        super()._quick_summary()
+        if hasattr(self,'quick_labor111'):
+            try:
+                _,_,total=self._quick_amounts()
+                self.quick_total_label.configure(text=f'TOTAL: {brl(total)} • Mão de obra: {brl(money_to_cents(self.quick_labor111.get()))}')
+            except ValueError:pass
+
+    def _sale_amount111(self):
+        labor=money_to_cents(self.sale_labor111.get()) if hasattr(self,'sale_labor111') else 0
+        oid=getattr(self,'_cash_active_order',None)
+        due=0
+        if oid:
+            with connect() as con:due=order_balance(con,oid)['saldo']
+        goods=sum(round(x['qty']*x['unit']) for x in getattr(self,'cart',[]))
+        discount=money_to_cents(self.sale_fields['desconto'].get())
+        return due,goods,labor,discount,due+goods+labor-discount
+
+    def _checkout_summary(self):
+        super()._checkout_summary()
+        if not hasattr(self,'sale_labor111'):return
+        try:
+            due,goods,labor,discount,total=self._sale_amount111()
+        except ValueError:return
+        self.checkout_sticky_total.config(text=brl(max(total,0)))
+        self.checkout_breakdown.config(text=f'OS: {brl(due)} • Peças: {brl(goods)} • Mão de obra extra: {brl(labor)}')
+        self._update_cash_change()
+
+    def _update_cash_change(self):
+        super()._update_cash_change()
+        if not hasattr(self,'sale_labor111') or self.sale_payment.get()!='Dinheiro':return
+        try:
+            total=self._sale_amount111()[-1]
+            if self.cash_received.get().strip():
+                change=money_to_cents(self.cash_received.get())-total
+                self.cash_change_label.configure(text=f'TROCO: {brl(change)}' if change>=0 else f'Faltam {brl(-change)}',
+                    foreground='#166534' if change>=0 else '#B91C1C')
+        except ValueError:pass
+
+    def _reset_quick_sale(self):
+        if hasattr(self,'quick_labor111'):
+            self.quick_labor111.set('0');self.quick_labor_desc111.set('')
+        return super()._reset_quick_sale()
+
+    def _new_checkout(self):
+        if hasattr(self,'sale_labor111'):
+            self.sale_labor111.set('0');self.sale_labor_desc111.set('')
+        return super()._new_checkout()
+
+    def _make_cash111(self):
+        tab=ttk.Frame(self.cash_notebook,padding=8)
+        self.cash_notebook.add(tab,text='CONFERÊNCIA DE CAIXA')
+        self.cash111_tab=tab
+        ttk.Label(tab,text='Conferência diária • dinheiro, Pix, débito e crédito',font=('Segoe UI Semibold',14),wraplength=650).pack(anchor='w')
+        top=ttk.Frame(tab);top.pack(fill='x',pady=5)
+        self.cash111_day=tk.StringVar(value=dt.date.today().isoformat())
+        ttk.Label(top,text='Data (AAAA-MM-DD)').pack(side='left')
+        ttk.Entry(top,textvariable=self.cash111_day,width=13).pack(side='left',padx=4)
+        ttk.Button(top,text='Consultar',command=lambda:self.alert(self.refresh_cash111)).pack(side='left',padx=3)
+        ttk.Button(top,text='Hoje',command=lambda:(self.cash111_day.set(dt.date.today().isoformat()),self.alert(self.refresh_cash111))).pack(side='left')
+        ttk.Button(top,text='Saldo inicial',command=lambda:self.alert(self.initial_cash111)).pack(side='left',padx=3)
+        self.cash111_summary=ttk.Label(tab,text='Fundo inicial não informado',font=('Segoe UI Semibold',11),wraplength=650,justify='left')
+        self.cash111_summary.pack(fill='x',pady=5)
+        self.cash111_methods=ttk.Treeview(tab,columns=('Forma','Recebido','Saídas','Líquido'),show='headings',height=8)
+        for k,w in zip(('Forma','Recebido','Saídas','Líquido'),(180,110,110,110)):
+            self.cash111_methods.heading(k,text=k);self.cash111_methods.column(k,width=w,minwidth=62)
+        self.cash111_methods.pack(fill='x')
+        ttk.Label(tab,text='Histórico do dia (forma de pagamento em cada lançamento)').pack(anchor='w',pady=(8,4))
+        box=ttk.Frame(tab);box.pack(fill='both',expand=True)
+        self.cash111_history=ttk.Treeview(box,columns=('Nº','Origem','Descrição','Pagamento','Valor'),show='headings',height=7)
+        for k,w in zip(('Nº','Origem','Descrição','Pagamento','Valor'),(52,100,230,140,100)):
+            self.cash111_history.heading(k,text=k);self.cash111_history.column(k,width=w,minwidth=45)
+        sy=ttk.Scrollbar(box,orient='vertical',command=self.cash111_history.yview)
+        sx=ttk.Scrollbar(box,orient='horizontal',command=self.cash111_history.xview)
+        self.cash111_history.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
+        self.cash111_history.grid(row=0,column=0,sticky='nsew');sy.grid(row=0,column=1,sticky='ns');sx.grid(row=1,column=0,sticky='ew')
+        box.columnconfigure(0,weight=1);box.rowconfigure(0,weight=1)
+        self.cash111_count=tk.StringVar()
+        count=ttk.Frame(tab);count.pack(fill='x',pady=4)
+        ttk.Label(count,text='Dinheiro contado R(self,total):
+        pix=simpledialog.askstring('Pagamento misto',f'Total {brl(total)}. Pix R$:',initialvalue='0',parent=self)
+        if pix is None:return None
+        cash=simpledialog.askstring('Pagamento misto','Dinheiro R$ (valor líquido, sem troco):',initialvalue='0',parent=self)
+        if cash is None:return None
+        card=simpledialog.askstring('Pagamento misto','Cartão R$:',initialvalue='0',parent=self)
+        if card is None:return None
+        values={'Pix':money_to_cents(pix),'Dinheiro':money_to_cents(cash),'Cartão':money_to_cents(card)}
+        if sum(values.values())!=total or sum(v>0 for v in values.values())<2:raise ValueError('Informe pelo menos dois meios e a soma exata do total.')
+        return {k:v for k,v in values.items() if v}
+
+    def _save_mixed110(self,con,result,parts):
+        label='Misto: '+', '.join(k+' '+brl(v) for k,v in parts.items())
+        for k,v in parts.items():con.execute('INSERT INTO pagamentos_mistos_v110 VALUES(?,?,?)',(result['id'],k,v))
+        con.execute('UPDATE fechamentos_v18 SET metodo=? WHERE id=?',(label,result['id']))
+        remaining=dict(parts)
+        # Aloca primeiro o serviço e depois os extras, sem duplicar recebimentos.
+        for table,key,origin,total in (('pagamentos','payment_id','OS / Caixa',result['service']),
+                                       ('vendas_balcao','sale_id','Balcão',result['products'])):
+            if not result[key]:continue
+            allocated={}
+            for method in remaining:
+                amount=min(total,remaining[method])
+                if amount:
+                    allocated[method]=amount
+                    remaining[method]-=amount
+                    total-=amount
+                    con.execute('INSERT INTO rateio_v110 VALUES(?,?,?,?)',(origin,result[key],method,amount))
+            desc='Misto: '+', '.join(k+' '+brl(v) for k,v in allocated.items()) if len(allocated)>1 else next(iter(allocated))
+            con.execute(f'UPDATE {table} SET metodo=? WHERE id=?',(desc,result[key]))
+        if any(remaining.values()):raise ValueError('Rateio incorreto.')
+
+    def finish_quick_sale(self):
+        self._require110(sales=True)
+        if self.quick_method.get()!='Misto':return super().finish_quick_sale()
+        _,discount,total=self._quick_amounts()
+        if total<=0:raise ValueError('Adicione produtos válidos.')
+        parts=self._mixed110(total)
+        if parts is None:return
+        # Reutiliza o checkout validado com um método permitido; grava a divisão na mesma transação.
+        with connect() as con:
+            result=create_quick_checkout(con,self.quick_name.get().strip() or 'Consumidor final',self.quick_doc.get(),list(self.quick_cart),discount,'Pix',notes=self.quick_notes.get())
+            if result['total']!=total:raise ValueError('Preço alterado; confira o carrinho.')
+            self._save_mixed110(con,result,parts)
+        self.last_quick_id=self.last_checkout_id=result['id'];self.last_sale_id=result['sale_id']
+        self._reset_quick_sale();self.refresh_extended()
+        try: self.make_checkout_receipt(result['id'])
+        except Exception as exc:messagebox.showwarning('Venda salva',f'Não repita a venda. Erro no PDF: {exc}',parent=self)
+        else:messagebox.showinfo('Venda concluída',f'Pagamento misto registrado: {brl(total)}.',parent=self)
+        return result
+
+    def finish_sale(self):
+        self._require110(sales=True)
+        if self.sale_payment.get()!='Misto':return super().finish_sale()
+        cid=self.sale_customer_map.get(self.sale_customer.get())
+        if not cid:raise ValueError('Selecione um cliente.')
+        oid=getattr(self,'_cash_active_order',None)
+        discount=money_to_cents(self.sale_fields['desconto'].get())
+        with connect() as con:due=order_balance(con,oid)['saldo'] if oid else 0
+        total=due+sum(round(i['qty']*i['unit']) for i in self.cart)-discount
+        if total<=0:raise ValueError('Não há saldo a receber.')
+        parts=self._mixed110(total)
+        if parts is None:return
+        with connect() as con:
+            result=checkout(con,cid,oid,list(self.cart),discount,'Misto',self.sale_fields['obs'].get())
+            if result['total']!=total:raise ValueError('Saldo alterado; confira novamente.')
+            self._save_mixed110(con,result,parts)
+        self.last_checkout_id=result['id'];self.last_sale_id=result['sale_id'];self.last_payment_id=result['payment_id']
+        self.cart.clear();self.sale_fields['desconto'].set('0');self.sale_fields['obs'].set('');self.cash_received.set('');self._pending_extra_os=None
+        self.refresh_extended();self.refresh_retail();self._checkout_client_selected()
+        try:self.make_checkout_receipt(result['id'])
+        except Exception as exc:messagebox.showwarning('Pagamento salvo',f'Não repita. Erro no PDF: {exc}',parent=self)
+        else:messagebox.showinfo('Pagamento registrado',brl(total),parent=self)
+        return result
+
+    def _daily110(self):
+        if not self.winfo_exists():return
+        try:
+            root=DB.parent/'backups_automaticos'
+            today='PDV_'+dt.date.today().isoformat()
+            if not list(root.glob(today+'*.zip')):
+                backup_bundle(root)
+            for p in sorted(root.glob('PDV_*.zip'))[:-14]:p.unlink()
+        except Exception as exc:
+            logging.exception('Falha no backup automático')
+            if hasattr(self,'user110_label'):
+                self.user110_label.configure(text='Falha no backup automático — Ctrl+A')
+        self.after(3600000,self._daily110)
+
+    def backup(self):
+        self._require110(admin=True)
+        folder=filedialog.askdirectory(parent=self,title='Pasta de destino do backup completo')
+        if folder:
+            target=backup_bundle(folder)
+            messagebox.showinfo('Backup completo',str(target),parent=self)
+
+    def restore(self):
+        self._require110(admin=True)
+        # Restauração é deliberadamente separada para evitar substituir arquivos em uso.
+        path=filedialog.askopenfilename(parent=self,filetypes=[('Backup completo ZIP','*.zip'),('Banco antigo','*.db')])
+        if not path:return
+        if not messagebox.askyesno('Restaurar','Substituir dados atuais? Uma cópia automática será feita antes. O programa será encerrado.',parent=self):return
+        backup_bundle()
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            if Path(path).suffix.lower()=='.zip':
+                with zipfile.ZipFile(path) as z:
+                    if z.testzip() is not None:raise ValueError('ZIP inválido.')
+                    for info in z.infolist():
+                        target=(root/info.filename).resolve()
+                        if not target.is_relative_to(root.resolve()):raise ValueError('Caminho inseguro no ZIP.')
+                        if info.is_dir():continue
+                        if target.name!='mecanica.db' and target.suffix.lower() not in ('.pdf','.jpg','.jpeg','.png','.webp','.bmp'):raise ValueError('Arquivo inesperado no backup.')
+                        target.parent.mkdir(parents=True,exist_ok=True)
+                        target.write_bytes(z.read(info))
+                source=root/'mecanica.db'
+            else:source=Path(path)
+            if not source.is_file():raise ValueError('Banco não encontrado no backup.')
+            with closing(sqlite3.connect(source)) as src:
+                if src.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise ValueError('Banco inválido.')
+                names={r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if not {'clientes','veiculos','orcamentos','ordens','pecas'}.issubset(names):raise ValueError('Backup não pertence ao PDV Mecânica.')
+                with closing(connect()) as dest:src.backup(dest)
+            if root.joinpath('mecanica.db').exists():
+                import shutil
+                for f in root.rglob('*'):
+                    if f.is_file() and f!=source:
+                        target=DB.parent/f.relative_to(root);target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(f,target)
+        messagebox.showinfo('Restauração','Dados restaurados. Abra o PDV novamente.',parent=self)
+        self.destroy()
+).pack(side='left')
+        ttk.Entry(count,textvariable=self.cash111_count,width=12).pack(side='left',padx=4)
+        self.cash111_diff=ttk.Label(count,text='');self.cash111_diff.pack(side='left')
+        self.cash111_count.trace_add('write',lambda *_:self._diff111())
+        self.cash_notebook.bind('<<NotebookTabChanged>>',lambda e:self.refresh_cash111() if getattr(self,'_ready110',False) else None,add='+')
+        self._cash111_expected=None
+
+    def _diff111(self):
+        if not hasattr(self,'cash111_diff'):return
+        try:
+            raw=self.cash111_count.get().strip()
+            expected=getattr(self,'_cash111_expected',None)
+            self.cash111_diff.config(text='' if not raw or expected is None else 'Diferença: '+brl(money_to_cents(raw)-expected))
+        except ValueError:self.cash111_diff.config(text='Valor inválido')
+
+    def refresh_cash111(self):
+        if not getattr(self,'_ready110',False) or not hasattr(self,'cash111_history'):return
+        try:
+            with connect() as con:stats=daily(con,self.cash111_day.get().strip())
+        except ValueError:return
+        initial=stats['initial']
+        self._cash111_expected=stats['expected'] if initial is not None else None
+        self.cash111_summary.config(text=f'Fundo inicial: {brl(initial) if initial is not None else "Não informado"}  •  Dinheiro esperado: {brl(stats["expected"]) if initial is not None else "Informe o fundo inicial"}\nTotal recebido (todos os meios): {brl(stats["total_in"])}  •  Saídas: {brl(stats["total_out"])}')
+        for tree in (self.cash111_methods,self.cash111_history):tree.delete(*tree.get_children())
+        for method in METHODS:
+            inc=stats['incoming'][method];out=stats['outgoing'][method]
+            self.cash111_methods.insert('','end',values=(method,brl(inc),brl(out),brl(inc-out)))
+        for day,origin,num,desc,method,value in stats['rows']:
+            self.cash111_history.insert('','end',values=(num,origin,desc,method,brl(value)))
+        self._diff111()
+
+    def initial_cash111(self):
+        self._require110(admin=True)
+        day=dt.date.fromisoformat(self.cash111_day.get().strip()).isoformat()
+        with connect() as con:current=daily(con,day)['initial']
+        raw=simpledialog.askstring('Fundo inicial',f'Dinheiro deixado na gaveta em {day} (R$). Não conta como venda.',initialvalue=brl(current or 0),parent=self)
+        if raw is None:return
+        amount=money_to_cents(raw)
+        if not messagebox.askyesno('Confirmar',f'Registrar {brl(amount)} como fundo inicial de {day}?',parent=self):return
+        with connect() as con:set_initial(con,day,amount,self._who110())
+        self.refresh_cash111()
+
+    def refresh_extended(self):
+        result=super().refresh_extended()
+        self.refresh_cash111()
+        return result
 
     def _mixed110(self,total):
         pix=simpledialog.askstring('Pagamento misto',f'Total {brl(total)}. Pix R$:',initialvalue='0',parent=self)

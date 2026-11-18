@@ -7,6 +7,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 def install(con):
     con.executescript("""
+    CREATE TABLE IF NOT EXISTS caixa_inicial_v111(data TEXT PRIMARY KEY,valor INTEGER NOT NULL CHECK(valor>=0),operador TEXT NOT NULL,alterado TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS reservas_v110(
       os_id INTEGER REFERENCES ordens(id), peca_id INTEGER REFERENCES pecas(id),
       quantidade REAL NOT NULL CHECK(quantidade>0), custo INTEGER NOT NULL,

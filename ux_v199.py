@@ -31,7 +31,7 @@ def document_digits(raw):
 
 
 def create_quick_checkout(con, name, document, cart, discount, method,
-                          received=None, notes=''):
+                          received=None, notes='', labor=0, labor_description='Serviço'):
     """Venda independente da OS; cria/reutiliza cliente e baixa estoque atomicamente.
 
     O comando checkout já abre a transação se ainda não houver uma ativa;
@@ -44,8 +44,10 @@ def create_quick_checkout(con, name, document, cart, discount, method,
         raise ValueError('Selecione uma forma de pagamento válida.')
     if not isinstance(discount, int) or discount < 0:
         raise ValueError('Desconto inválido.')
-    if not cart:
-        raise ValueError('Adicione ao menos um produto do estoque.')
+    if not isinstance(labor,int) or labor<0:
+        raise ValueError('Mão de obra inválida.')
+    if not cart and not labor:
+        raise ValueError('Adicione um produto ou valor de mão de obra.')
     con.execute('BEGIN IMMEDIATE')
     existing = None
     if doc:
@@ -91,7 +93,7 @@ def create_quick_checkout(con, name, document, cart, discount, method,
             raise ValueError(f'Cadastre um preço de venda maior que zero para {product_name}.')
         normalized.append({'id': product_id, 'name': product_name, 'sku': sku,
                            'qty': quantity, 'unit': unit})
-    total = sum(round(row['qty'] * row['unit']) for row in normalized) - discount
+    total = sum(round(row['qty'] * row['unit']) for row in normalized) + labor - discount
     if total <= 0:
         raise ValueError('O total da venda precisa ser maior que zero.')
     if method == 'Dinheiro':
@@ -101,7 +103,7 @@ def create_quick_checkout(con, name, document, cart, discount, method,
         raise ValueError('Troco só pode ser informado em pagamentos em dinheiro.')
 
     result = checkout(con, cid, None, normalized, discount, method,
-                      notes=notes, cash_received=received)
+                      notes=notes, cash_received=received, labor=labor, labor_description=labor_description)
     return {**result, 'customer_id': cid, 'customer_name': customer_name}
 
 

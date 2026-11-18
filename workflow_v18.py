@@ -50,12 +50,14 @@ def customer_orders(con, cid):
            ORDER BY CASE WHEN o.status='Concluída' THEN 0 ELSE 1 END, o.id DESC''',(cid,)).fetchall()
 
 
-def checkout(con, cid, osid, cart, discount, method, notes='', cash_received=None):
+def checkout(con, cid, osid, cart, discount, method, notes='', cash_received=None, labor=0, labor_description='Mão de obra'):
     """Uma transacao para OS pendente + produtos extras, com uma unica baixa por extra.
 
     A baixa das pecas do orcamento e' feita UMA vez em decide_quote(), nao aqui.
     Cada valor e contabilizado somente na sua origem: pagamento OS ou venda extras.
     """
+    if isinstance(labor,bool) or not isinstance(labor,int) or labor<0:
+        raise ValueError('Valor de mão de obra inválido.')
     if not cid or not method or discount < 0:
         raise ValueError('Selecione um cliente cadastrado, forma de pagamento e desconto válido.')
     if not con.in_transaction: con.execute('BEGIN IMMEDIATE')
@@ -85,10 +87,10 @@ def checkout(con, cid, osid, cart, discount, method, notes='', cash_received=Non
         if not dbitem or dbitem[1]<qty:raise ValueError('Estoque insuficiente para '+item['name'])
         # Preco e descricao do carrinho foram obtidos do cadastro, nao da OS.
         by_product[pid]=(qty,item['name'],item['unit'])
-    subtotal=sum(round(qty*unit) for qty,_,unit in by_product.values())
+    subtotal=sum(round(qty*unit) for qty,_,unit in by_product.values())+labor
     if discount>subtotal:raise ValueError('Desconto de produtos maior que os extras selecionados.')
     extra_total=subtotal-discount
-    if cart and extra_total<=0:raise ValueError('A venda extra deve ter valor maior que zero.')
+    if (cart or labor) and extra_total<=0:raise ValueError('A venda extra deve ter valor maior que zero.')
     total=due+extra_total
     if total<=0:raise ValueError('Não existe saldo de serviço nem produto extra para receber.')
     is_cash=method.strip().casefold()=='dinheiro'
@@ -110,7 +112,7 @@ def checkout(con, cid, osid, cart, discount, method, notes='', cash_received=Non
         pid=con.execute('''INSERT INTO pagamentos(ordem_id,data,descricao,metodo,valor,tipo)
             VALUES(?,?,?,?,?,'Entrada')''',(osid,day,f'Fechamento integrado OS #{osid:06d}',method,due)).lastrowid
     sale=None
-    if by_product:
+    if by_product or labor:
         sale=con.execute('''INSERT INTO vendas_balcao(data,cliente_id,metodo,desconto,total,observacoes)
                      VALUES(?,?,?,?,?,?)''',(stamp,cid,method,discount,extra_total,notes.strip())).lastrowid
         for product_id,(qty,name,unit) in by_product.items():
@@ -119,6 +121,9 @@ def checkout(con, cid, osid, cart, discount, method, notes='', cash_received=Non
             con.execute('UPDATE pecas SET quantidade=quantidade-? WHERE id=?',(qty,product_id))
             con.execute('''INSERT INTO movimentacoes(peca_id,tipo,quantidade,observacoes)
                 VALUES(?,?,?,?)''',(product_id,'Saída balcão',qty,f'Fechamento integrado #{sale:06d}'))
+        if labor:
+            con.execute("""INSERT INTO vendas_balcao_itens(venda_id,peca_id,descricao,quantidade,unitario)
+                VALUES(?,NULL,?,1,?)""",(sale,'Mão de obra: '+(str(labor_description).strip() or 'Serviço'),labor))
         if osid is not None:
             con.execute('INSERT INTO os_produtos_extras(ordem_id,venda_id) VALUES(?,?)',(osid,sale))
     fid=con.execute('''INSERT INTO fechamentos_v18
@@ -135,6 +140,8 @@ def checkout_document(con, fid):
     if not row:raise ValueError('Fechamento não encontrado.')
     service=con.execute('SELECT valor FROM pagamentos WHERE id=?',(row[5],)).fetchone()[0] if row[5] else 0
     sale=con.execute('SELECT total FROM vendas_balcao WHERE id=?',(row[6],)).fetchone()[0] if row[6] else 0
+    labor=0
+    if row[6]:labor=con.execute("SELECT coalesce(sum(round(quantidade*unitario)),0) FROM vendas_balcao_itens WHERE venda_id=? AND peca_id IS NULL AND descricao LIKE 'Mão de obra:%'",(row[6],)).fetchone()[0]
     items=[]
     if row[6]:items=con.execute('SELECT descricao,quantidade,unitario FROM vendas_balcao_itens WHERE venda_id=?',(row[6],)).fetchall()
     order=None
@@ -145,7 +152,7 @@ def checkout_document(con, fid):
     extra=con.execute('SELECT valor_entregue,troco FROM fechamentos_v18 WHERE id=?',(fid,)).fetchone()
     discount=con.execute('SELECT desconto FROM vendas_balcao WHERE id=?',(row[6],)).fetchone()[0] if row[6] else 0
     return {'row':row,'service':service,'extras':sale,'items':items,'order':order,
-            'cash_received':extra[0],'change':extra[1],'discount':discount}
+            'cash_received':extra[0],'change':extra[1],'discount':discount,'labor':labor}
 
 
 def _plain_styles():
@@ -262,7 +269,7 @@ def compact_receipt_pdf(target,profile,receipt):
     if receipt['service']:
         story.append(_p('Serviço / saldo da OS: '+brl(receipt['service']),styles['Text9']))
     if receipt['extras']:
-        story.append(_p(('Produtos do estoque: ' if quick_sale else 'Produtos extras: ')+brl(receipt['extras']),styles['Text9']))
+        story.append(_p(('Produtos e serviços: ' if quick_sale else 'Extras e serviços adicionais: ')+brl(receipt['extras']),styles['Text9']))
         for name,qty,unit in receipt['items']:
             story.append(_p(f'  {name}  × {qty:g}  —  {brl(round(qty*unit))}',styles['Small']))
     if receipt.get('discount',0):
