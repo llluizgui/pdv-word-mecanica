@@ -1,4 +1,4 @@
-"""Interface 1.10.0; não acrescenta abertura/fechamento de caixa nem sangria."""
+"""Interface 1.10.1; não acrescenta abertura/fechamento de caixa nem sangria."""
 import datetime as dt
 from contextlib import closing
 import logging
@@ -449,149 +449,7 @@ class WorkspaceV110(WorkspaceV1910):
             section=ttk.LabelFrame(parent,text='Mão de obra / serviço adicional (opcional)',padding=6)
             section.pack(fill='x',before=before,pady=5)
             ttk.Label(section,text='Descrição do serviço').grid(row=0,column=0,sticky='w')
-            ttk.Label(section,text='Valor R(self,total):
-        pix=simpledialog.askstring('Pagamento misto',f'Total {brl(total)}. Pix R$:',initialvalue='0',parent=self)
-        if pix is None:return None
-        cash=simpledialog.askstring('Pagamento misto','Dinheiro R$ (valor líquido, sem troco):',initialvalue='0',parent=self)
-        if cash is None:return None
-        debit=simpledialog.askstring('Pagamento misto','Débito R$:',initialvalue='0',parent=self)
-        if debit is None:return None
-        credit=simpledialog.askstring('Pagamento misto','Crédito R$:',initialvalue='0',parent=self)
-        if credit is None:return None
-        values={'Pix':money_to_cents(pix),'Dinheiro':money_to_cents(cash),'Cartão débito':money_to_cents(debit),'Cartão crédito':money_to_cents(credit)}
-        if sum(values.values())!=total or sum(v>0 for v in values.values())<2:raise ValueError('Informe pelo menos dois meios e a soma exata do total.')
-        return {k:v for k,v in values.items() if v}
-
-    def _save_mixed110(self,con,result,parts):
-        label='Misto: '+', '.join(k+' '+brl(v) for k,v in parts.items())
-        for k,v in parts.items():con.execute('INSERT INTO pagamentos_mistos_v110 VALUES(?,?,?)',(result['id'],k,v))
-        con.execute('UPDATE fechamentos_v18 SET metodo=? WHERE id=?',(label,result['id']))
-        remaining=dict(parts)
-        # Aloca primeiro o serviço e depois os extras, sem duplicar recebimentos.
-        for table,key,origin,total in (('pagamentos','payment_id','OS / Caixa',result['service']),
-                                       ('vendas_balcao','sale_id','Balcão',result['products'])):
-            if not result[key]:continue
-            allocated={}
-            for method in remaining:
-                amount=min(total,remaining[method])
-                if amount:
-                    allocated[method]=amount
-                    remaining[method]-=amount
-                    total-=amount
-                    con.execute('INSERT INTO rateio_v110 VALUES(?,?,?,?)',(origin,result[key],method,amount))
-            desc='Misto: '+', '.join(k+' '+brl(v) for k,v in allocated.items()) if len(allocated)>1 else next(iter(allocated))
-            con.execute(f'UPDATE {table} SET metodo=? WHERE id=?',(desc,result[key]))
-        if any(remaining.values()):raise ValueError('Rateio incorreto.')
-
-    def finish_quick_sale(self):
-        self._require110(sales=True)
-        labor=money_to_cents(self.quick_labor111.get())
-        if self.quick_method.get()!='Misto' and not labor:return super().finish_quick_sale()
-        _,discount,total=self._quick_amounts()
-        if total<=0:raise ValueError('Adicione produtos válidos.')
-        method=self.quick_method.get()
-        parts=self._mixed110(total) if method=='Misto' else None
-        if method=='Misto' and parts is None:return
-        received=money_to_cents(self.quick_received.get()) if method=='Dinheiro' else None
-        if method=='Dinheiro' and received<total:raise ValueError('Dinheiro insuficiente.')
-        if not messagebox.askyesno('Confirmar venda',f'Total {brl(total)} • Mão de obra {brl(labor)} • {method}. Confirmar recebimento?',parent=self):return
-        with connect() as con:
-            result=create_quick_checkout(con,self.quick_name.get().strip() or 'Consumidor final',self.quick_doc.get(),list(self.quick_cart),discount,'Pix' if parts else method,received=received,notes=self.quick_notes.get(),labor=labor,labor_description=self.quick_labor_desc111.get())
-            if result['total']!=total:raise ValueError('Preço alterado; confira o carrinho.')
-            if parts:self._save_mixed110(con,result,parts)
-        self.last_quick_id=self.last_checkout_id=result['id'];self.last_sale_id=result['sale_id']
-        self._reset_quick_sale();self.refresh_extended()
-        try: self.make_checkout_receipt(result['id'])
-        except Exception as exc:messagebox.showwarning('Venda salva',f'Não repita a venda. Erro no PDF: {exc}',parent=self)
-        else:messagebox.showinfo('Venda concluída',f'Pagamento registrado: {brl(total)}. Troco: {brl(result["change"])}.',parent=self)
-        return result
-
-    def finish_sale(self):
-        self._require110(sales=True)
-        labor=money_to_cents(self.sale_labor111.get())
-        if self.sale_payment.get()!='Misto' and not labor:return super().finish_sale()
-        cid=self.sale_customer_map.get(self.sale_customer.get())
-        if not cid:raise ValueError('Selecione um cliente.')
-        oid=getattr(self,'_cash_active_order',None)
-        discount=money_to_cents(self.sale_fields['desconto'].get())
-        with connect() as con:due=order_balance(con,oid)['saldo'] if oid else 0
-        total=due+sum(round(i['qty']*i['unit']) for i in self.cart)+labor-discount
-        if total<=0:raise ValueError('Não há saldo a receber.')
-        method=self.sale_payment.get()
-        parts=self._mixed110(total) if method=='Misto' else None
-        if method=='Misto' and parts is None:return
-        received=money_to_cents(self.cash_received.get()) if method=='Dinheiro' else None
-        if method=='Dinheiro' and received<total:raise ValueError('Dinheiro insuficiente.')
-        if not messagebox.askyesno('Confirmar recebimento',f'Total {brl(total)} • Mão de obra extra {brl(labor)}. Confirmar {method}?',parent=self):return
-        with connect() as con:
-            result=checkout(con,cid,oid,list(self.cart),discount,method,self.sale_fields['obs'].get(),cash_received=received,labor=labor,labor_description=self.sale_labor_desc111.get())
-            if result['total']!=total:raise ValueError('Saldo alterado; confira novamente.')
-            if parts:self._save_mixed110(con,result,parts)
-        self.sale_labor111.set('0');self.sale_labor_desc111.set('')
-        self.last_checkout_id=result['id'];self.last_sale_id=result['sale_id'];self.last_payment_id=result['payment_id']
-        self.cart.clear();self.sale_fields['desconto'].set('0');self.sale_fields['obs'].set('');self.cash_received.set('');self._pending_extra_os=None
-        self.refresh_extended();self.refresh_retail();self._checkout_client_selected()
-        try:self.make_checkout_receipt(result['id'])
-        except Exception as exc:messagebox.showwarning('Pagamento salvo',f'Não repita. Erro no PDF: {exc}',parent=self)
-        else:messagebox.showinfo('Pagamento registrado',brl(total),parent=self)
-        return result
-
-    def _daily110(self):
-        if not self.winfo_exists():return
-        try:
-            root=DB.parent/'backups_automaticos'
-            today='PDV_'+dt.date.today().isoformat()
-            if not list(root.glob(today+'*.zip')):
-                backup_bundle(root)
-            for p in sorted(root.glob('PDV_*.zip'))[:-14]:p.unlink()
-        except Exception as exc:
-            logging.exception('Falha no backup automático')
-            if hasattr(self,'user110_label'):
-                self.user110_label.configure(text='Falha no backup automático — Ctrl+A')
-        self.after(3600000,self._daily110)
-
-    def backup(self):
-        self._require110(admin=True)
-        folder=filedialog.askdirectory(parent=self,title='Pasta de destino do backup completo')
-        if folder:
-            target=backup_bundle(folder)
-            messagebox.showinfo('Backup completo',str(target),parent=self)
-
-    def restore(self):
-        self._require110(admin=True)
-        # Restauração é deliberadamente separada para evitar substituir arquivos em uso.
-        path=filedialog.askopenfilename(parent=self,filetypes=[('Backup completo ZIP','*.zip'),('Banco antigo','*.db')])
-        if not path:return
-        if not messagebox.askyesno('Restaurar','Substituir dados atuais? Uma cópia automática será feita antes. O programa será encerrado.',parent=self):return
-        backup_bundle()
-        with tempfile.TemporaryDirectory() as d:
-            root=Path(d)
-            if Path(path).suffix.lower()=='.zip':
-                with zipfile.ZipFile(path) as z:
-                    if z.testzip() is not None:raise ValueError('ZIP inválido.')
-                    for info in z.infolist():
-                        target=(root/info.filename).resolve()
-                        if not target.is_relative_to(root.resolve()):raise ValueError('Caminho inseguro no ZIP.')
-                        if info.is_dir():continue
-                        if target.name!='mecanica.db' and target.suffix.lower() not in ('.pdf','.jpg','.jpeg','.png','.webp','.bmp'):raise ValueError('Arquivo inesperado no backup.')
-                        target.parent.mkdir(parents=True,exist_ok=True)
-                        target.write_bytes(z.read(info))
-                source=root/'mecanica.db'
-            else:source=Path(path)
-            if not source.is_file():raise ValueError('Banco não encontrado no backup.')
-            with closing(sqlite3.connect(source)) as src:
-                if src.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise ValueError('Banco inválido.')
-                names={r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                if not {'clientes','veiculos','orcamentos','ordens','pecas'}.issubset(names):raise ValueError('Backup não pertence ao PDV Mecânica.')
-                with closing(connect()) as dest:src.backup(dest)
-            if root.joinpath('mecanica.db').exists():
-                import shutil
-                for f in root.rglob('*'):
-                    if f.is_file() and f!=source:
-                        target=DB.parent/f.relative_to(root);target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(f,target)
-        messagebox.showinfo('Restauração','Dados restaurados. Abra o PDV novamente.',parent=self)
-        self.destroy()
-).grid(row=0,column=1,sticky='w',padx=5)
+            ttk.Label(section,text='Valor R$').grid(row=0,column=1,sticky='w',padx=5)
             ttk.Entry(section,textvariable=desc,width=20).grid(row=1,column=0,sticky='ew')
             ttk.Entry(section,textvariable=amount,width=10).grid(row=1,column=1,sticky='ew',padx=5)
             section.columnconfigure(0,weight=1)
@@ -688,137 +546,7 @@ class WorkspaceV110(WorkspaceV1910):
         box.columnconfigure(0,weight=1);box.rowconfigure(0,weight=1)
         self.cash111_count=tk.StringVar()
         count=ttk.Frame(tab);count.pack(fill='x',pady=4)
-        ttk.Label(count,text='Dinheiro contado R(self,total):
-        pix=simpledialog.askstring('Pagamento misto',f'Total {brl(total)}. Pix R$:',initialvalue='0',parent=self)
-        if pix is None:return None
-        cash=simpledialog.askstring('Pagamento misto','Dinheiro R$ (valor líquido, sem troco):',initialvalue='0',parent=self)
-        if cash is None:return None
-        card=simpledialog.askstring('Pagamento misto','Cartão R$:',initialvalue='0',parent=self)
-        if card is None:return None
-        values={'Pix':money_to_cents(pix),'Dinheiro':money_to_cents(cash),'Cartão':money_to_cents(card)}
-        if sum(values.values())!=total or sum(v>0 for v in values.values())<2:raise ValueError('Informe pelo menos dois meios e a soma exata do total.')
-        return {k:v for k,v in values.items() if v}
-
-    def _save_mixed110(self,con,result,parts):
-        label='Misto: '+', '.join(k+' '+brl(v) for k,v in parts.items())
-        for k,v in parts.items():con.execute('INSERT INTO pagamentos_mistos_v110 VALUES(?,?,?)',(result['id'],k,v))
-        con.execute('UPDATE fechamentos_v18 SET metodo=? WHERE id=?',(label,result['id']))
-        remaining=dict(parts)
-        # Aloca primeiro o serviço e depois os extras, sem duplicar recebimentos.
-        for table,key,origin,total in (('pagamentos','payment_id','OS / Caixa',result['service']),
-                                       ('vendas_balcao','sale_id','Balcão',result['products'])):
-            if not result[key]:continue
-            allocated={}
-            for method in remaining:
-                amount=min(total,remaining[method])
-                if amount:
-                    allocated[method]=amount
-                    remaining[method]-=amount
-                    total-=amount
-                    con.execute('INSERT INTO rateio_v110 VALUES(?,?,?,?)',(origin,result[key],method,amount))
-            desc='Misto: '+', '.join(k+' '+brl(v) for k,v in allocated.items()) if len(allocated)>1 else next(iter(allocated))
-            con.execute(f'UPDATE {table} SET metodo=? WHERE id=?',(desc,result[key]))
-        if any(remaining.values()):raise ValueError('Rateio incorreto.')
-
-    def finish_quick_sale(self):
-        self._require110(sales=True)
-        if self.quick_method.get()!='Misto':return super().finish_quick_sale()
-        _,discount,total=self._quick_amounts()
-        if total<=0:raise ValueError('Adicione produtos válidos.')
-        parts=self._mixed110(total)
-        if parts is None:return
-        # Reutiliza o checkout validado com um método permitido; grava a divisão na mesma transação.
-        with connect() as con:
-            result=create_quick_checkout(con,self.quick_name.get().strip() or 'Consumidor final',self.quick_doc.get(),list(self.quick_cart),discount,'Pix',notes=self.quick_notes.get())
-            if result['total']!=total:raise ValueError('Preço alterado; confira o carrinho.')
-            self._save_mixed110(con,result,parts)
-        self.last_quick_id=self.last_checkout_id=result['id'];self.last_sale_id=result['sale_id']
-        self._reset_quick_sale();self.refresh_extended()
-        try: self.make_checkout_receipt(result['id'])
-        except Exception as exc:messagebox.showwarning('Venda salva',f'Não repita a venda. Erro no PDF: {exc}',parent=self)
-        else:messagebox.showinfo('Venda concluída',f'Pagamento misto registrado: {brl(total)}.',parent=self)
-        return result
-
-    def finish_sale(self):
-        self._require110(sales=True)
-        if self.sale_payment.get()!='Misto':return super().finish_sale()
-        cid=self.sale_customer_map.get(self.sale_customer.get())
-        if not cid:raise ValueError('Selecione um cliente.')
-        oid=getattr(self,'_cash_active_order',None)
-        discount=money_to_cents(self.sale_fields['desconto'].get())
-        with connect() as con:due=order_balance(con,oid)['saldo'] if oid else 0
-        total=due+sum(round(i['qty']*i['unit']) for i in self.cart)-discount
-        if total<=0:raise ValueError('Não há saldo a receber.')
-        parts=self._mixed110(total)
-        if parts is None:return
-        with connect() as con:
-            result=checkout(con,cid,oid,list(self.cart),discount,'Misto',self.sale_fields['obs'].get())
-            if result['total']!=total:raise ValueError('Saldo alterado; confira novamente.')
-            self._save_mixed110(con,result,parts)
-        self.last_checkout_id=result['id'];self.last_sale_id=result['sale_id'];self.last_payment_id=result['payment_id']
-        self.cart.clear();self.sale_fields['desconto'].set('0');self.sale_fields['obs'].set('');self.cash_received.set('');self._pending_extra_os=None
-        self.refresh_extended();self.refresh_retail();self._checkout_client_selected()
-        try:self.make_checkout_receipt(result['id'])
-        except Exception as exc:messagebox.showwarning('Pagamento salvo',f'Não repita. Erro no PDF: {exc}',parent=self)
-        else:messagebox.showinfo('Pagamento registrado',brl(total),parent=self)
-        return result
-
-    def _daily110(self):
-        if not self.winfo_exists():return
-        try:
-            root=DB.parent/'backups_automaticos'
-            today='PDV_'+dt.date.today().isoformat()
-            if not list(root.glob(today+'*.zip')):
-                backup_bundle(root)
-            for p in sorted(root.glob('PDV_*.zip'))[:-14]:p.unlink()
-        except Exception as exc:
-            logging.exception('Falha no backup automático')
-            if hasattr(self,'user110_label'):
-                self.user110_label.configure(text='Falha no backup automático — Ctrl+A')
-        self.after(3600000,self._daily110)
-
-    def backup(self):
-        self._require110(admin=True)
-        folder=filedialog.askdirectory(parent=self,title='Pasta de destino do backup completo')
-        if folder:
-            target=backup_bundle(folder)
-            messagebox.showinfo('Backup completo',str(target),parent=self)
-
-    def restore(self):
-        self._require110(admin=True)
-        # Restauração é deliberadamente separada para evitar substituir arquivos em uso.
-        path=filedialog.askopenfilename(parent=self,filetypes=[('Backup completo ZIP','*.zip'),('Banco antigo','*.db')])
-        if not path:return
-        if not messagebox.askyesno('Restaurar','Substituir dados atuais? Uma cópia automática será feita antes. O programa será encerrado.',parent=self):return
-        backup_bundle()
-        with tempfile.TemporaryDirectory() as d:
-            root=Path(d)
-            if Path(path).suffix.lower()=='.zip':
-                with zipfile.ZipFile(path) as z:
-                    if z.testzip() is not None:raise ValueError('ZIP inválido.')
-                    for info in z.infolist():
-                        target=(root/info.filename).resolve()
-                        if not target.is_relative_to(root.resolve()):raise ValueError('Caminho inseguro no ZIP.')
-                        if info.is_dir():continue
-                        if target.name!='mecanica.db' and target.suffix.lower() not in ('.pdf','.jpg','.jpeg','.png','.webp','.bmp'):raise ValueError('Arquivo inesperado no backup.')
-                        target.parent.mkdir(parents=True,exist_ok=True)
-                        target.write_bytes(z.read(info))
-                source=root/'mecanica.db'
-            else:source=Path(path)
-            if not source.is_file():raise ValueError('Banco não encontrado no backup.')
-            with closing(sqlite3.connect(source)) as src:
-                if src.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise ValueError('Banco inválido.')
-                names={r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                if not {'clientes','veiculos','orcamentos','ordens','pecas'}.issubset(names):raise ValueError('Backup não pertence ao PDV Mecânica.')
-                with closing(connect()) as dest:src.backup(dest)
-            if root.joinpath('mecanica.db').exists():
-                import shutil
-                for f in root.rglob('*'):
-                    if f.is_file() and f!=source:
-                        target=DB.parent/f.relative_to(root);target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(f,target)
-        messagebox.showinfo('Restauração','Dados restaurados. Abra o PDV novamente.',parent=self)
-        self.destroy()
-).pack(side='left')
+        ttk.Label(count,text='Dinheiro contado R$').pack(side='left')
         ttk.Entry(count,textvariable=self.cash111_count,width=12).pack(side='left',padx=4)
         self.cash111_diff=ttk.Label(count,text='');self.cash111_diff.pack(side='left')
         self.cash111_count.trace_add('write',lambda *_:self._diff111())
@@ -870,9 +598,11 @@ class WorkspaceV110(WorkspaceV1910):
         if pix is None:return None
         cash=simpledialog.askstring('Pagamento misto','Dinheiro R$ (valor líquido, sem troco):',initialvalue='0',parent=self)
         if cash is None:return None
-        card=simpledialog.askstring('Pagamento misto','Cartão R$:',initialvalue='0',parent=self)
-        if card is None:return None
-        values={'Pix':money_to_cents(pix),'Dinheiro':money_to_cents(cash),'Cartão':money_to_cents(card)}
+        debit=simpledialog.askstring('Pagamento misto','Débito R$:',initialvalue='0',parent=self)
+        if debit is None:return None
+        credit=simpledialog.askstring('Pagamento misto','Crédito R$:',initialvalue='0',parent=self)
+        if credit is None:return None
+        values={'Pix':money_to_cents(pix),'Dinheiro':money_to_cents(cash),'Cartão débito':money_to_cents(debit),'Cartão crédito':money_to_cents(credit)}
         if sum(values.values())!=total or sum(v>0 for v in values.values())<2:raise ValueError('Informe pelo menos dois meios e a soma exata do total.')
         return {k:v for k,v in values.items() if v}
 
@@ -899,39 +629,49 @@ class WorkspaceV110(WorkspaceV1910):
 
     def finish_quick_sale(self):
         self._require110(sales=True)
-        if self.quick_method.get()!='Misto':return super().finish_quick_sale()
+        labor=money_to_cents(self.quick_labor111.get())
+        if self.quick_method.get()!='Misto' and not labor:return super().finish_quick_sale()
         _,discount,total=self._quick_amounts()
         if total<=0:raise ValueError('Adicione produtos válidos.')
-        parts=self._mixed110(total)
-        if parts is None:return
-        # Reutiliza o checkout validado com um método permitido; grava a divisão na mesma transação.
+        method=self.quick_method.get()
+        parts=self._mixed110(total) if method=='Misto' else None
+        if method=='Misto' and parts is None:return
+        received=money_to_cents(self.quick_received.get()) if method=='Dinheiro' else None
+        if method=='Dinheiro' and received<total:raise ValueError('Dinheiro insuficiente.')
+        if not messagebox.askyesno('Confirmar venda',f'Total {brl(total)} • Mão de obra {brl(labor)} • {method}. Confirmar recebimento?',parent=self):return
         with connect() as con:
-            result=create_quick_checkout(con,self.quick_name.get().strip() or 'Consumidor final',self.quick_doc.get(),list(self.quick_cart),discount,'Pix',notes=self.quick_notes.get())
+            result=create_quick_checkout(con,self.quick_name.get().strip() or 'Consumidor final',self.quick_doc.get(),list(self.quick_cart),discount,'Pix' if parts else method,received=received,notes=self.quick_notes.get(),labor=labor,labor_description=self.quick_labor_desc111.get())
             if result['total']!=total:raise ValueError('Preço alterado; confira o carrinho.')
-            self._save_mixed110(con,result,parts)
+            if parts:self._save_mixed110(con,result,parts)
         self.last_quick_id=self.last_checkout_id=result['id'];self.last_sale_id=result['sale_id']
         self._reset_quick_sale();self.refresh_extended()
         try: self.make_checkout_receipt(result['id'])
         except Exception as exc:messagebox.showwarning('Venda salva',f'Não repita a venda. Erro no PDF: {exc}',parent=self)
-        else:messagebox.showinfo('Venda concluída',f'Pagamento misto registrado: {brl(total)}.',parent=self)
+        else:messagebox.showinfo('Venda concluída',f'Pagamento registrado: {brl(total)}. Troco: {brl(result["change"])}.',parent=self)
         return result
 
     def finish_sale(self):
         self._require110(sales=True)
-        if self.sale_payment.get()!='Misto':return super().finish_sale()
+        labor=money_to_cents(self.sale_labor111.get())
+        if self.sale_payment.get()!='Misto' and not labor:return super().finish_sale()
         cid=self.sale_customer_map.get(self.sale_customer.get())
         if not cid:raise ValueError('Selecione um cliente.')
         oid=getattr(self,'_cash_active_order',None)
         discount=money_to_cents(self.sale_fields['desconto'].get())
         with connect() as con:due=order_balance(con,oid)['saldo'] if oid else 0
-        total=due+sum(round(i['qty']*i['unit']) for i in self.cart)-discount
+        total=due+sum(round(i['qty']*i['unit']) for i in self.cart)+labor-discount
         if total<=0:raise ValueError('Não há saldo a receber.')
-        parts=self._mixed110(total)
-        if parts is None:return
+        method=self.sale_payment.get()
+        parts=self._mixed110(total) if method=='Misto' else None
+        if method=='Misto' and parts is None:return
+        received=money_to_cents(self.cash_received.get()) if method=='Dinheiro' else None
+        if method=='Dinheiro' and received<total:raise ValueError('Dinheiro insuficiente.')
+        if not messagebox.askyesno('Confirmar recebimento',f'Total {brl(total)} • Mão de obra extra {brl(labor)}. Confirmar {method}?',parent=self):return
         with connect() as con:
-            result=checkout(con,cid,oid,list(self.cart),discount,'Misto',self.sale_fields['obs'].get())
+            result=checkout(con,cid,oid,list(self.cart),discount,method,self.sale_fields['obs'].get(),cash_received=received,labor=labor,labor_description=self.sale_labor_desc111.get())
             if result['total']!=total:raise ValueError('Saldo alterado; confira novamente.')
-            self._save_mixed110(con,result,parts)
+            if parts:self._save_mixed110(con,result,parts)
+        self.sale_labor111.set('0');self.sale_labor_desc111.set('')
         self.last_checkout_id=result['id'];self.last_sale_id=result['sale_id'];self.last_payment_id=result['payment_id']
         self.cart.clear();self.sale_fields['desconto'].set('0');self.sale_fields['obs'].set('');self.cash_received.set('');self._pending_extra_os=None
         self.refresh_extended();self.refresh_retail();self._checkout_client_selected()

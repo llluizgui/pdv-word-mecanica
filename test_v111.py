@@ -44,5 +44,10 @@ assert win._quick_amounts()[2]==3000
 assert 'CONFERÊNCIA' in win.cash_notebook.tab(win.cash111_tab,'text')
 win.refresh_cash111()
 assert win._cash111_expected==10000
+win.quick_method.set('Pix')
+win.finish_quick_sale()
+with connect() as con:
+    assert daily(con,day)['incoming']['Pix']==5000
+    assert daily(con,day)['expected']==10000
 win.destroy()
 print('OK 1.10.1: mão de obra, venda avulsa sem peça, recibo, troco, caixa separado e estorno')
